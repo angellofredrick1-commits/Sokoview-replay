@@ -6,8 +6,14 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# SPA fallback. Function routes (/api/*) are matched first by Netlify,
-# so this does not shadow them.
+# Capture monitor lives at /capture — must come before the SPA catch-all,
+# which is evaluated top-down and would otherwise swallow it.
+[[redirects]]
+  from = "/capture"
+  to = "/capture.html"
+  status = 200
+
+# SPA fallback for the replayer.
 [[redirects]]
   from = "/*"
   to = "/index.html"
