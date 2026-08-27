@@ -39,23 +39,93 @@ function normalizeSeries(raw) {
 }
 
 /**
- * Live fetch — goes through our own Netlify Function, never straight to Sokoview.
- * The API key lives in SOKOVIEW_API_KEY on the server and is never sent to the browser.
+ * Reads price_adjusted from Supabase — split/bonus adjusted, so NMB does not
+ * show a phantom 89% crash on its 1:10 split. Publishable key only; RLS makes
+ * it read-only.
  */
-const PROXY = import.meta.env.VITE_API_PROXY || "/api";
+const SB_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SB_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
 
-async function fetchSeries({ symbol, from, to }) {
-  const url = `${PROXY}/prices?symbol=${encodeURIComponent(symbol)}&from=${from}&to=${to}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+async function sbFetch(path, cfg) {
+  const res = await fetch(`${cfg.url.replace(/\/$/, "")}/rest/v1/${path}`, {
+    headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, Accept: "application/json" },
+  });
   if (!res.ok) {
-    let detail = "";
-    try {
-      const body = await res.json();
-      detail = body?.error ? ` — ${body.error}` : "";
-    } catch {}
-    throw new Error(`${res.status} ${res.statusText}${detail}`);
+    let m = `${res.status} ${res.statusText}`;
+    try { const b = await res.json(); if (b?.message) m += ` — ${b.message}`; } catch {}
+    throw new Error(m);
   }
-  return normalizeSeries(await res.json());
+  return res.json();
+}
+
+/** Which symbols are liquid enough to simulate, and how badly they gap. */
+async function fetchUniverse(cfg) {
+  const rows = await sbFetch(
+    "liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell,first_day,last_day" +
+    "&order=pct_days_traded.desc", cfg);
+  return rows.map((r) => ({
+    symbol: r.symbol,
+    pctTraded: Number(r.pct_days_traded ?? 0),
+    days: Number(r.days ?? 0),
+    dry: Number(r.longest_dry_spell ?? 0),
+    first: r.first_day, last: r.last_day,
+  }));
+}
+
+/**
+ * PostgREST caps a response at 1000 rows, so ten years of daily bars needs
+ * paging through Range headers.
+ */
+async function fetchSeries({ symbol, from, cfg }) {
+  const PAGE = 1000;
+  const out = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const url =
+      `${cfg.url.replace(/\/$/, "")}/rest/v1/price_adjusted` +
+      `?select=trade_date,close_adj,close_raw,volume` +
+      `&symbol=eq.${encodeURIComponent(symbol)}` +
+      (from ? `&trade_date=gte.${from}` : "") +
+      `&order=trade_date.asc`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, Accept: "application/json",
+        Range: `${offset}-${offset + PAGE - 1}`, "Range-Unit": "items",
+      },
+    });
+    if (!res.ok) throw new Error(`${symbol}: ${res.status} ${res.statusText}`);
+    const page = await res.json();
+    out.push(...page);
+    if (page.length < PAGE) break;
+    if (offset > 40000) break; // guard
+  }
+  return out
+    .map((r) => ({
+      date: String(r.trade_date).slice(0, 10),
+      close: Number(r.close_adj ?? r.close_raw),
+      volume: r.volume == null ? null : Number(r.volume),
+      div: 0,
+    }))
+    .filter((b) => b.date && isFinite(b.close) && b.close > 0);
+}
+
+/**
+ * Ten years of daily bars is too many to animate smoothly, and monthly DCA does
+ * not need daily resolution. Keep the last bar of each period.
+ */
+function resample(bars, freq) {
+  if (freq === "daily" || bars.length < 2) return bars;
+  const key = (d) => {
+    if (freq === "monthly") return d.slice(0, 7);
+    // ISO-ish week bucket: days since epoch / 7
+    return String(Math.floor(Date.parse(d + "T00:00:00Z") / 864e5 / 7));
+  };
+  const out = [];
+  for (let i = 0; i < bars.length; i++) {
+    const isLastOfPeriod =
+      i === bars.length - 1 || key(bars[i + 1].date) !== key(bars[i].date);
+    if (isLastOfPeriod) out.push(bars[i]);
+  }
+  return out;
 }
 
 /* ---- Demo universe: DSE-listed equities, plausible price paths ---------- */
@@ -390,7 +460,24 @@ function Stat({ label, value, sub, tone = "default", big }) {
    5. LEG PANEL
    ==========================================================================*/
 
-function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbols, lockLump, lockedValue }) {
+function LiquidityNote({ liq }) {
+  if (!liq) return null;
+  const bad = liq.pctTraded < 25 || liq.dry > 60;
+  const warn = liq.pctTraded < 55 || liq.dry > 21;
+  if (!bad && !warn) return null;
+  return (
+    <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
+      bad ? "bg-red-50 border-red-200 text-red-700"
+          : "bg-amber-50 border-amber-200 text-amber-700"}`}>
+      Traded on {liq.pctTraded.toFixed(0)}% of days, longest gap {liq.dry} days.
+      {bad
+        ? " Too thin to simulate regular buying — treat any result as indicative only."
+        : " Regular purchases would sometimes have waited weeks to fill."}
+    </div>
+  );
+}
+
+function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbols, lockLump, lockedValue, liq }) {
   const dim = !enabled;
   return (
     <div
@@ -432,6 +519,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
+          <LiquidityNote liq={liq} />
         </div>
 
         <div className="mb-3">
@@ -501,8 +589,11 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
 
 export default function SokoviewReplay() {
   /* ---- source ---- */
-  const [source, setSource] = useState("demo"); // demo | live
-  const [liveData, setLiveData] = useState({}); // symbol -> bars
+  const [source, setSource] = useState(SB_URL && SB_KEY ? "live" : "demo");
+  const [liveData, setLiveData] = useState({});     // symbol -> bars
+  const [universe, setUniverse] = useState([]);      // liquidity_profile rows
+  const [resolution, setResolution] = useState("weekly"); // daily | weekly | monthly
+  const sbCfg = { url: SB_URL, key: SB_KEY };
   const [conn, setConn] = useState({ state: "idle", msg: "" });
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteSym, setPasteSym] = useState("CRDB");
@@ -518,7 +609,7 @@ export default function SokoviewReplay() {
     perPeriod: 100000, freq: "monthly", autoLump: false,
   });
   const [bOn, setBOn] = useState(true);
-  const [startYear, setStartYear] = useState(2018);
+  const [startYear, setStartYear] = useState(2016);
   const [matchCapital, setMatchCapital] = useState(true);
   const [whole, setWhole] = useState(true);
   const [reinvest, setReinvest] = useState(true);
@@ -531,14 +622,38 @@ export default function SokoviewReplay() {
   const [speed, setSpeed] = useState(1);
   const raf = useRef(null);
 
-  const symbols = source === "live" && Object.keys(liveData).length
-    ? Object.keys(liveData)
+  const symbols = source === "live" && universe.length
+    ? universe.map((u) => u.symbol)
     : Object.keys(UNIVERSE);
 
+  const liqOf = useMemo(() => {
+    const m = {};
+    universe.forEach((u) => { m[u.symbol] = u; });
+    return m;
+  }, [universe]);
+
   const getBars = useCallback(
-    (sym) => (source === "live" ? liveData[sym] ?? [] : demoSeries(sym)),
-    [source, liveData]
+    (sym) => {
+      const raw = source === "live" ? liveData[sym] ?? [] : demoSeries(sym);
+      return source === "live" ? resample(raw, resolution) : raw;
+    },
+    [source, liveData, resolution]
   );
+
+  // Pull the tradeable universe once, then auto-load whatever the legs need.
+  useEffect(() => {
+    if (source !== "live" || !SB_URL || !SB_KEY) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = await fetchUniverse(sbCfg);
+        if (!cancelled) setUniverse(u);
+      } catch (e) {
+        if (!cancelled) setConn({ state: "err", msg: e.message });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [source]);
 
   /* ---- windowed bars, aligned across both legs ---- */
   const { barsA, barsB, n } = useMemo(() => {
@@ -659,34 +774,41 @@ export default function SokoviewReplay() {
     }
   };
 
-  /* ---- live connection ---- */
-  const loadSymbols = async (syms) => {
+  /* ---- load price history from Supabase ---- */
+  const loadSymbols = useCallback(async (syms) => {
+    if (!SB_URL || !SB_KEY) {
+      setConn({ state: "err", msg: "Supabase is not configured for this deploy." });
+      return;
+    }
+    const need = [...new Set(syms)].filter((s) => s && !liveData[s]);
+    if (!need.length) return;
     setConn({ state: "loading", msg: "" });
-    const to = new Date().toISOString().slice(0, 10);
-    const from = `${startYear}-01-01`;
     try {
       const results = await Promise.all(
-        [...new Set(syms)].map(async (sym) => [sym, await fetchSeries({ symbol: sym, from, to })])
+        need.map(async (sym) => [sym, await fetchSeries({ symbol: sym, cfg: sbCfg })])
       );
-      const empty = results.filter(([, bars]) => !bars.length).map(([s]) => s);
-      if (empty.length === results.length) {
-        throw new Error("Connected, but no rows matched the expected shape.");
-      }
       setLiveData((d) => {
         const next = { ...d };
         results.forEach(([sym, bars]) => { if (bars.length) next[sym] = bars; });
         return next;
       });
+      const empty = results.filter(([, b]) => !b.length).map(([s]) => s);
       setConn({
         state: "ok",
-        msg:
-          results.filter(([, b]) => b.length).map(([s, b]) => `${s}: ${b.length} bars`).join(" · ") +
-          (empty.length ? ` · no data for ${empty.join(", ")}` : ""),
+        msg: results.filter(([, b]) => b.length)
+          .map(([s, b]) => `${s}: ${b.length} bars`).join(" · ") +
+          (empty.length ? ` · no history for ${empty.join(", ")}` : ""),
       });
     } catch (e) {
       setConn({ state: "err", msg: e.message });
     }
-  };
+  }, [liveData]);
+
+  // Auto-load whenever a leg's symbol changes.
+  useEffect(() => {
+    if (source !== "live") return;
+    loadSymbols(bOn ? [legA.symbol, legB.symbol] : [legA.symbol]);
+  }, [source, legA.symbol, legB.symbol, bOn, loadSymbols]);
 
   const ingestPaste = () => {
     try {
@@ -759,26 +881,27 @@ export default function SokoviewReplay() {
               <div>
                 <Eyebrow>Data source</Eyebrow>
                 <div className="text-[12px] font-bold text-neutral-900">
-                  Sokoview API via server proxy
+                  Sokoview price history · split &amp; bonus adjusted
                 </div>
                 <div className="text-[10.5px] text-gray-500 mt-0.5">
-                  Your API key stays on the server. The browser never sees it.
+                  {universe.length
+                    ? `${universe.length} instruments · ${universe[0]?.first ?? ""} to ${universe[0]?.last ?? ""}`
+                    : "Loading universe…"}
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => loadSymbols(bOn ? [legA.symbol, legB.symbol] : [legA.symbol])}
-                  className="bg-neutral-950 text-white text-[11px] font-bold px-4 py-2.5 rounded-lg hover:bg-neutral-800 flex items-center gap-1.5"
-                >
-                  {conn.state === "loading" ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Plug className="w-3 h-3" />
-                  )}
-                  Load {bOn && legB.symbol !== legA.symbol
-                    ? `${legA.symbol} + ${legB.symbol}`
-                    : legA.symbol}
-                </button>
+              <div className="flex items-end gap-2">
+                <div>
+                  <Eyebrow>Resolution</Eyebrow>
+                  <Seg
+                    value={resolution}
+                    onChange={setResolution}
+                    options={[
+                      { v: "monthly", l: "Monthly" },
+                      { v: "weekly", l: "Weekly" },
+                      { v: "daily", l: "Daily" },
+                    ]}
+                  />
+                </div>
                 <button
                   onClick={() => setPasteOpen((v) => !v)}
                   className="border border-gray-300 bg-white text-[11px] font-bold px-3 py-2.5 rounded-lg hover:border-neutral-900"
@@ -788,6 +911,11 @@ export default function SokoviewReplay() {
               </div>
             </div>
 
+            {conn.state === "loading" && (
+              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-gray-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading price history…
+              </div>
+            )}
             {conn.state === "ok" && (
               <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-green-700">
                 <Check className="w-3.5 h-3.5" /> {conn.msg}
@@ -799,8 +927,7 @@ export default function SokoviewReplay() {
                 <span>
                   {conn.msg}
                   <span className="block text-gray-500 font-normal mt-0.5">
-                    Check SOKOVIEW_API_KEY and SOKOVIEW_PRICES_PATH in your Netlify environment
-                    variables, then redeploy.
+                    Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy.
                   </span>
                 </span>
               </div>
@@ -971,7 +1098,7 @@ export default function SokoviewReplay() {
               <div>
                 <Eyebrow>Start from</Eyebrow>
                 <div className="flex flex-wrap gap-1.5">
-                  {[2018, 2020, 2022, 2024].map((y) => (
+                  {[2016, 2018, 2020, 2022, 2024].map((y) => (
                     <button
                       key={y}
                       onClick={() => setStartYear(y)}
@@ -1017,6 +1144,7 @@ export default function SokoviewReplay() {
                 symbols={symbols}
                 lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
                 lockedValue={legB.perPeriod * periodsB}
+                liq={liqOf[legA.symbol]}
               />
               <LegPanel
                 leg={legB}
@@ -1029,6 +1157,7 @@ export default function SokoviewReplay() {
                 symbols={symbols}
                 lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
                 lockedValue={legA.perPeriod * periodsA}
+                liq={liqOf[legB.symbol]}
               />
 
               <div className="rounded-xl border border-gray-300 p-3.5 space-y-3">
