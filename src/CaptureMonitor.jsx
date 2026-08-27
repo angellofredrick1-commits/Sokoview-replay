@@ -171,6 +171,11 @@ export default function CaptureMonitor() {
     if (!raw.length) return null;
 
     const dates = [...new Set(raw.map((r) => r.trade_date))].sort();
+    // "Capture day" means days WE captured, not days present in the table —
+    // vendor backfill would otherwise inflate it to a decade.
+    const ownDates = [...new Set(
+      raw.filter((r) => r.source === "sokoview_quote").map((r) => r.trade_date)
+    )].sort();
     const latest = dates[dates.length - 1];
     const prev = dates.length > 1 ? dates[dates.length - 2] : null;
     const symbols = [...new Set(raw.map((r) => r.symbol))].sort();
@@ -205,7 +210,12 @@ export default function CaptureMonitor() {
     const covered = new Set(raw.map((r) => `${r.symbol}|${r.trade_date}`));
 
     // anomalies
-    const actionKey = new Set(actions.map((a) => `${a.symbol}|${a.ex_date}`));
+    // Match a recorded action within a few days of the observed move: sources
+    // disagree on ex-date by a day or two, and a stale upstream change field can
+    // echo the move for longer.
+    const nearAction = (sym, date) =>
+      actions.some((a) =>
+        a.symbol === sym && Math.abs(daysBetween(a.ex_date, date)) <= 4);
     const anomalies = [];
     // Scan a rolling window so a corporate action does not vanish from view the
     // next morning — you need it visible until it is recorded.
@@ -217,7 +227,7 @@ export default function CaptureMonitor() {
       if (p >= 18 && !seenBig.has(k)) {
         seenBig.add(k);
         anomalies.push({
-          kind: actionKey.has(k) ? "action-known" : "action-suspect",
+          kind: nearAction(r.symbol, r.trade_date) ? "action-known" : "action-suspect",
           symbol: r.symbol,
           detail: `${pct(r.pct_change, 1)} on ${shortDate(r.trade_date)}`,
         });
@@ -277,7 +287,9 @@ export default function CaptureMonitor() {
     return {
       dates, latest, prev, symbols, sources, today: todayOne, todaySymbols, prevBySym,
       withVolume, tradedByVol, seenFlag, runs, covered, anomalies, recon, liq,
-      dayNumber: dates.length,
+      dayNumber: ownDates.length,
+      ownFirst: ownDates[0] ?? null,
+      ownLast: ownDates[ownDates.length - 1] ?? null,
       spanDays: dates.length > 1 ? daysBetween(dates[0], latest) + 1 : 1,
     };
   }, [raw, actions]);
@@ -416,7 +428,14 @@ export default function CaptureMonitor() {
               <Health
                 label="Capture day"
                 value={`Day ${model.dayNumber}`}
-                sub={`${prettyDate(model.dates[0])} → ${prettyDate(model.latest)}`}
+                sub={
+                  model.ownFirst
+                    ? `own capture ${prettyDate(model.ownFirst)} → ${prettyDate(model.ownLast)}` +
+                      (model.dates.length > model.dayNumber
+                        ? ` · history from ${prettyDate(model.dates[0])}`
+                        : "")
+                    : "no capture rows yet"
+                }
                 icon={Calendar}
                 tone="neutral"
               />
