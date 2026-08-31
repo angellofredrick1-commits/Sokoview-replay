@@ -185,10 +185,28 @@ export default function CaptureMonitor() {
     // With several sources a symbol appears more than once, so count instruments
     // by distinct symbol rather than by row.
     const todaySymbols = [...new Set(today.map((r) => r.symbol))];
-    // One row per symbol for display, preferring our own capture.
+    // One row per symbol, merged across sources the same way price_daily does:
+    // the close comes from the best source that HAS a close, and volume from the
+    // best source that has volume. The exchange report carries range + volume but
+    // no closing price, so picking a single row would lose one or the other.
+    const RANK = { dse_report: 1, african_markets: 2, sokoview_quote: 3 };
+    const rank = (r) => RANK[r.source] ?? 9;
     const todayOne = todaySymbols.map((sym) => {
       const rows = today.filter((r) => r.symbol === sym);
-      return rows.find((r) => r.source === "sokoview_quote") ?? rows[0];
+      const withClose = rows.filter((r) => r.close != null).sort((a, b) => rank(a) - rank(b));
+      const withVol = rows.filter((r) => r.volume != null).sort((a, b) => rank(a) - rank(b));
+      const base = withClose[0] ?? rows[0];
+      const v = withVol[0];
+      return {
+        ...base,
+        volume: v ? v.volume : null,
+        volume_source: v ? v.source : null,
+        close_source: withClose[0] ? withClose[0].source : null,
+        // volume is direct evidence; the seen-today flag is not
+        traded: v ? Number(v.volume) > 0 : base.traded,
+        traded_basis: v ? "volume" : "flag",
+        sources: [...new Set(rows.map((r) => r.source))],
+      };
     });
     const prevBySym = {};
     if (prev) raw.filter((r) => r.trade_date === prev).forEach((r) => { prevBySym[r.symbol] = r; });
@@ -249,8 +267,8 @@ export default function CaptureMonitor() {
       }
     });
 
-    const rank = { "action-suspect": 0, missing: 1, "action-known": 2, stale: 3 };
-    anomalies.sort((a, b) => rank[a.kind] - rank[b.kind]);
+    const kindOrder = { "action-suspect": 0, missing: 1, "action-known": 2, stale: 3 };
+    anomalies.sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind]);
 
     // reconciliation: same symbol+date, different sources
     const recon = [];
@@ -261,9 +279,12 @@ export default function CaptureMonitor() {
         (byKey[k] ??= []).push(r);
       });
       Object.entries(byKey).forEach(([k, rows]) => {
-        if (rows.length < 2) return;
         const [sym, date] = k.split("|");
-        const vals = rows.map((r) => ({ source: r.source, close: Number(r.close) }));
+        // dse_report rows carry a range and volume but NO close. Comparing a real
+        // price against a missing one reports every instrument as a mismatch.
+        const priced = rows.filter((r) => r.close != null);
+        if (priced.length < 2) return;
+        const vals = priced.map((r) => ({ source: r.source, close: Number(r.close) }));
         const spread = Math.max(...vals.map((v) => v.close)) - Math.min(...vals.map((v) => v.close));
         if (spread > 0.005) recon.push({ symbol: sym, date, vals, spread });
       });
@@ -272,7 +293,14 @@ export default function CaptureMonitor() {
 
     // liquidity across all captured history
     const liq = symbols.map((s) => {
-      const rows = raw.filter((r) => r.symbol === s);
+      // Deduplicate to one row per day, preferring the source with volume.
+      const byDate = {};
+      raw.filter((r) => r.symbol === s).forEach((r) => {
+        const cur = byDate[r.trade_date];
+        if (!cur || (cur.volume == null && r.volume != null) ||
+            (r.volume != null && rank(r) < rank(cur))) byDate[r.trade_date] = r;
+      });
+      const rows = Object.values(byDate);
       const withVol = rows.filter((r) => r.volume != null);
       const tradedDays = withVol.filter((r) => r.volume > 0).length;
       const distinctPrices = new Set(rows.map((r) => Number(r.close))).size;
@@ -287,6 +315,8 @@ export default function CaptureMonitor() {
     return {
       dates, latest, prev, symbols, sources, today: todayOne, todaySymbols, prevBySym,
       withVolume, tradedByVol, seenFlag, runs, covered, anomalies, recon, liq,
+      volSources: [...new Set(todayOne.map((r) => r.volume_source).filter(Boolean))],
+      totalVolume: todayOne.reduce((t, r) => t + Number(r.volume || 0), 0),
       dayNumber: ownDates.length,
       ownFirst: ownDates[0] ?? null,
       ownLast: ownDates[ownDates.length - 1] ?? null,
@@ -451,8 +481,9 @@ export default function CaptureMonitor() {
                 value={`${volCoverage.toFixed(0)}%`}
                 sub={
                   volCoverage === 0
-                    ? "Session run is not delivering volume — check the 12:55 UTC cron"
-                    : `${model.withVolume.length} of ${model.today.length} rows have volume`
+                    ? "No volume for this day — paste the DSE market report at /report"
+                    : `${model.withVolume.length} of ${model.today.length} instruments` +
+                      (model.volSources.length ? ` · from ${model.volSources.join(", ")}` : "")
                 }
                 icon={Activity}
                 tone={volCoverage === 0 ? "bad" : volCoverage < 90 ? "warn" : "good"}
@@ -513,8 +544,9 @@ export default function CaptureMonitor() {
               title={`Market on ${prettyDate(model.latest)}`}
               hint={
                 volCoverage === 0
-                  ? "Volume is missing, so 'traded' below reflects the seen-today flag rather than actual trades."
-                  : "Traded is derived from volume, which is direct evidence."
+                  ? "No volume for this day, so 'traded' falls back to the seen-today flag — not evidence of a trade."
+                  : `${nf.format(model.totalVolume)} shares traded across ` +
+                    `${model.tradedByVol.length} instruments. Traded is derived from volume.`
               }
               right={
                 <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
@@ -569,14 +601,32 @@ export default function CaptureMonitor() {
                             {ch === 0 ? "—" : pct(ch, 2)}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                            {hasVol ? nf.format(r.volume) : <span className="text-gray-300">null</span>}
+                            {hasVol ? (
+                              <>
+                                <span className={Number(r.volume) === 0 ? "text-gray-300" : ""}>
+                                  {nf.format(r.volume)}
+                                </span>
+                                {r.volume_source === "dse_report" && (
+                                  <span className="block text-[8.5px] text-green-600 font-bold uppercase tracking-wide">
+                                    exchange
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-center">
-                            {traded === true
-                              ? <Check className="w-3.5 h-3.5 text-green-600 inline" />
-                              : traded === false
-                              ? <Minus className="w-3.5 h-3.5 text-gray-300 inline" />
-                              : <span className="text-gray-300 text-[10px]">?</span>}
+                            <span title={r.traded_basis === "volume"
+                              ? "from volume — direct evidence"
+                              : "from the seen-today flag — inferred"}>
+                              {traded === true
+                                ? <Check className={`w-3.5 h-3.5 inline ${
+                                    r.traded_basis === "volume" ? "text-green-600" : "text-amber-500"}`} />
+                                : traded === false
+                                ? <Minus className="w-3.5 h-3.5 text-gray-300 inline" />
+                                : <span className="text-gray-300 text-[10px]">?</span>}
+                            </span>
                           </td>
                           <td className="px-4 py-2 text-right text-[10px] text-gray-400 tabular-nums">
                             {r.upstream_at ? String(r.upstream_at).slice(0, 10) : "—"}
