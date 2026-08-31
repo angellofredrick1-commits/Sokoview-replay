@@ -13,6 +13,11 @@
   to = "/capture.html"
   status = 200
 
+[[redirects]]
+  from = "/report"
+  to = "/report.html"
+  status = 200
+
 # SPA fallback for the replayer.
 [[redirects]]
   from = "/*"

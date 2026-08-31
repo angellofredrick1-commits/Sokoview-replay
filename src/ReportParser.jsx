@@ -1,0 +1,313 @@
+import React, { useState, useMemo } from "react";
+import { Check, AlertTriangle, Copy, FileText, Info } from "lucide-react";
+
+/* ============================================================================
+   Parser — same logic as scripts/parse_dse_report.py, in the browser
+   ==========================================================================*/
+
+const SYMBOLS = {
+  PRECISION: "PAL", NMG: "NMG", KCB: "KCB", TATEPA: "TTP", NICOL: "NICO",
+  JHL: "JHL", MUCOBA: "MUCOBA", NMB: "NMB", AFRIPRISE: "AFRIPRISE",
+  VODACOM: "VODA", CRDB: "CRDB", DCB: "DCB", SWALA: "SWALA", TBL: "TBL",
+  TCC: "TCC", MCB: "MCB", TCCL: "TCCL", DSE: "DSE", TPCC: "TPCC",
+  SWISS: "SWIS", TOL: "TOL", MKCB: "MKCB", JATU: "JATU", MBP: "MBP",
+  EABL: "EABL", YETU: "YETU", USL: "USL",
+  "VERTEX-ETF": "VERTEX-ETF", "IEACLC-ETF": "IEACLC-ETF",
+  MAENDELEO: "MBP", MWALIMU: "MCB", MKOMBOZI: "MKCB", SWISSPORT: "SWIS",
+  UCHUMI: "USL", JUBILEE: "JHL", "TANGA CEMENT": "TCCL",
+};
+
+const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
+                "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+
+function num(tok) {
+  if (tok == null) return null;
+  const t = String(tok).trim().replace(/,/g, "").replace(/^\+/, "");
+  if (["", "-", "–", "—", "N/A"].includes(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseReportDate(text) {
+  const m = text.match(
+    /MARKET REPORT ON\s+(\d{1,2})\s*(?:ST|ND|RD|TH)?\s+([A-Z]+)\s+(\d{4})/i);
+  if (!m) return null;
+  const mi = MONTHS.indexOf(m[2].toUpperCase());
+  if (mi < 0) return null;
+  return `${m[3]}-${String(mi + 1).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+}
+
+function parsePrices(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const out = [];
+  const seenRank = new Set();
+
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\d{1,2}$/.test(lines[i])) continue;
+    const rank = Number(lines[i]);
+    if (rank < 1 || rank > 40 || seenRank.has(rank)) continue;
+
+    const w = lines.slice(i + 1, i + 5);
+    if (w.length < 4) continue;
+    const name = w[0].trim().toUpperCase();
+    const sym = SYMBOLS[name];
+    if (!sym) continue;
+
+    const low = num(w[1]), high = num(w[2]), vol = num(w[3]);
+    if (low == null || high == null || low > high) continue;
+    if (out.some((r) => r.symbol === sym)) continue; // side panel echo
+
+    seenRank.add(rank);
+    out.push({ symbol: sym, name, low, high, volume: vol == null ? 0 : vol });
+  }
+  return out;
+}
+
+function parseDividends(text) {
+  const head = text.split(/MARKET REPORT ON/i)[0] || text;
+  if (!/DIVIDEND/i.test(head)) return [];
+  const out = [];
+
+  let amt = head.match(/TZS\s*([\d,]+\.?\d*)\s*\)?\s*per share/i)
+         || head.match(/TZS\s*([\d,]+\.?\d*)/i);
+  const ex = head.match(
+    /Ex-?Dividend\s*\n?\s*(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})/i);
+
+  let sym = null;
+  for (const k of Object.keys(SYMBOLS)) {
+    if (new RegExp(`\\b${k.replace(/[-]/g, "\\-")}\\b`).test(head.toUpperCase())) {
+      sym = SYMBOLS[k]; break;
+    }
+  }
+  if (amt && ex && sym) {
+    const mi = MONTHS.indexOf(ex[2].toUpperCase());
+    if (mi >= 0) {
+      out.push({
+        symbol: sym,
+        ex_date: `${ex[3]}-${String(mi + 1).padStart(2, "0")}-${String(ex[1]).padStart(2, "0")}`,
+        kind: "dividend",
+        value: num(amt[1]),
+      });
+    }
+  }
+  return out;
+}
+
+/* ============================================================================
+   UI
+   ==========================================================================*/
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-7 h-7 bg-neutral-950 rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
+        <div className="w-[3.5px] h-[5px] rounded-sm bg-green-500" />
+        <div className="w-[3.5px] h-[8px] rounded-sm bg-green-500" />
+        <div className="w-[3.5px] h-[11px] rounded-sm bg-green-500" />
+      </div>
+      <span className="text-[15px] font-extrabold tracking-tight text-neutral-950">sokoview</span>
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-green-600 bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
+        report
+      </span>
+    </div>
+  );
+}
+
+export default function ReportParser() {
+  const [text, setText] = useState("");
+  const [copied, setCopied] = useState("");
+
+  const parsed = useMemo(() => {
+    if (!text.trim()) return null;
+    const date = parseReportDate(text);
+    const rows = parsePrices(text);
+    const divs = parseDividends(text);
+    return { date, rows, divs };
+  }, [text]);
+
+  const csv = useMemo(() => {
+    if (!parsed?.rows.length || !parsed.date) return "";
+    const head = "symbol,trade_date,source,low,high,volume,traded";
+    const body = parsed.rows.map((r) =>
+      `${r.symbol},${parsed.date},dse_report,${r.low},${r.high},${r.volume},${r.volume > 0}`);
+    return [head, ...body].join("\n");
+  }, [parsed]);
+
+  const sql = useMemo(() => {
+    if (!parsed?.rows.length || !parsed.date) return "";
+    const lines = [
+      `-- DSE market report ${parsed.date}`,
+      `-- ${parsed.rows.length} instruments · ${parsed.rows.filter(r => r.volume > 0).length} traded`,
+      ``,
+      `insert into price_raw (symbol, trade_date, source, low, high, volume, traded) values`,
+      parsed.rows.map((r) =>
+        `  ('${r.symbol}', '${parsed.date}', 'dse_report', ${r.low}, ${r.high}, ${r.volume}, ${r.volume > 0})`
+      ).join(",\n"),
+      `on conflict (symbol, trade_date, source) do update set`,
+      `  low = excluded.low, high = excluded.high,`,
+      `  volume = excluded.volume, traded = excluded.traded;`,
+    ];
+    parsed.divs.forEach((d) => {
+      lines.push(``, `insert into corporate_action (symbol, ex_date, kind, value, source_url, verified)`);
+      lines.push(`values ('${d.symbol}', '${d.ex_date}', 'dividend', ${d.value},`);
+      lines.push(`        'DSE daily market report ${parsed.date}', true)`);
+      lines.push(`on conflict (symbol, ex_date, kind) do update set value = excluded.value;`);
+    });
+    return lines.join("\n");
+  }, [parsed]);
+
+  const copy = (what, val) => {
+    navigator.clipboard?.writeText(val);
+    setCopied(what);
+    setTimeout(() => setCopied(""), 1600);
+  };
+
+  return (
+    <div className="min-h-screen bg-white text-neutral-950 antialiased">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
+        * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+      `}</style>
+
+      <header className="border-b border-gray-200 px-5 py-3 sticky top-0 bg-white/95 backdrop-blur z-20">
+        <Logo />
+      </header>
+
+      <main className="max-w-5xl mx-auto px-5 py-6 space-y-5">
+        <div>
+          <h1 className="text-[20px] font-extrabold tracking-tight mb-1">
+            Paste a DSE market report
+          </h1>
+          <p className="text-[12px] text-gray-500 leading-relaxed max-w-2xl">
+            Select the whole email body and paste it below. This reads the range and
+            volume for every instrument, plus any dividend announcement, and gives you
+            SQL to run in Supabase. Nothing is sent anywhere — it parses in your browser.
+          </p>
+        </div>
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={10}
+          placeholder="Paste the full email here, starting from ANNOUNCEMENTS or MARKET REPORT ON…"
+          className="w-full border border-gray-300 rounded-xl px-3.5 py-3 text-[11.5px] font-mono outline-none focus:border-green-500 resize-y"
+        />
+
+        {parsed && !parsed.date && (
+          <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-amber-800">
+              <strong>No report date found.</strong> The parser looks for a line like
+              “MARKET REPORT ON 24TH AUGUST 2026”. Include the header when you copy.
+            </div>
+          </div>
+        )}
+
+        {parsed?.date && (
+          <>
+            <div className="grid sm:grid-cols-3 gap-3">
+              {[
+                { l: "Report date", v: parsed.date },
+                { l: "Instruments", v: parsed.rows.length },
+                { l: "Traded", v: parsed.rows.filter((r) => r.volume > 0).length },
+              ].map((s) => (
+                <div key={s.l} className="border border-gray-200 rounded-xl p-3.5">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-1">
+                    {s.l}
+                  </div>
+                  <div className="text-[19px] font-extrabold tabular-nums">{s.v}</div>
+                </div>
+              ))}
+            </div>
+
+            {parsed.divs.length > 0 && (
+              <div className="border border-green-300 bg-green-50 rounded-xl p-3.5">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Check className="w-3.5 h-3.5 text-green-700" />
+                  <span className="text-[11px] font-extrabold text-green-800">
+                    Corporate action found
+                  </span>
+                </div>
+                {parsed.divs.map((d, i) => (
+                  <div key={i} className="text-[12px] text-green-900 tabular-nums">
+                    <strong>{d.symbol}</strong> dividend of TZS {d.value} per share,
+                    ex-date {d.ex_date}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border border-gray-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+                <span className="text-[12px] font-extrabold">Parsed rows</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => copy("csv", csv)}
+                    className="flex items-center gap-1.5 border border-gray-300 text-[10.5px] font-bold px-2.5 py-1.5 rounded-lg hover:border-neutral-900"
+                  >
+                    {copied === "csv" ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => copy("sql", sql)}
+                    className="flex items-center gap-1.5 bg-neutral-950 text-white text-[10.5px] font-bold px-3 py-1.5 rounded-lg hover:bg-neutral-800"
+                  >
+                    {copied === "sql" ? <Check className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                    Copy SQL
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-[11.5px]">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="text-[9px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                      <th className="text-left px-4 py-2">Symbol</th>
+                      <th className="text-right px-3 py-2">Low</th>
+                      <th className="text-right px-3 py-2">High</th>
+                      <th className="text-right px-3 py-2">Volume</th>
+                      <th className="text-center px-4 py-2">Traded</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {parsed.rows.map((r) => (
+                      <tr key={r.symbol} className="hover:bg-gray-50">
+                        <td className="px-4 py-1.5">
+                          <span className="font-extrabold">{r.symbol}</span>
+                          {r.name !== r.symbol && (
+                            <span className="text-[9.5px] text-gray-400 ml-1.5">{r.name}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{r.low.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{r.high.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
+                          {r.volume.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-1.5 text-center">
+                          {r.volume > 0
+                            ? <Check className="w-3.5 h-3.5 text-green-600 inline" />
+                            : <span className="text-gray-300 text-[10px]">—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
+          <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+          <p>
+            The report's main table has Low, High and Shares Traded — <strong className="text-neutral-900">no
+            closing price</strong>. The email also interleaves the top-gainer panels into
+            that table, so a close inferred by position would often be the day's high
+            instead. Range and volume are what the report actually states, and volume is
+            the thing your capture is missing. Closes still come from the vendor feed.
+          </p>
+        </div>
+      </main>
+    </div>
+  );
+}

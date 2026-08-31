@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         capture: resolve(__dirname, "capture.html"),
+        report: resolve(__dirname, "report.html"),
       },
     },
   },

@@ -52,3 +52,26 @@ disagreements usually point at an unrecorded corporate action.
 - The `traded` column in the database currently means *seen in today's sync*, not
   *traded*. Once volume arrives, `volume > 0` is the honest signal and the flag can
   be recomputed across all history.
+
+---
+
+# Replayer on real history
+
+The replayer at `/` now reads `price_adjusted` from Supabase and uses the same two
+`VITE_` env vars as this page. It switches to live automatically when they are set;
+without them it falls back to sample data.
+
+**Adjusted, not raw.** It reads `close_adj`, so NMB's 1:10 split is handled and the
+series stays continuous instead of showing an 89% crash. Record a corporate action
+and every chart corrects itself with no reload of price data.
+
+**Resolution.** Ten years of daily bars is 2,459 points per stock — too many to
+animate smoothly, and monthly investing does not need daily resolution. Weekly
+(~520 bars) is the default; daily is there when you want it.
+
+**Liquidity gating.** Each leg shows a warning when the chosen stock trades thinly:
+amber below 55% of days or gaps over 21 days, red below 25% or gaps over 60 days.
+A monthly-purchase simulation on a stock that trades twice a year is fiction, and
+the tool now says so rather than quietly producing a number.
+
+Symbols are ordered by liquidity, so the most simulable names come first.
