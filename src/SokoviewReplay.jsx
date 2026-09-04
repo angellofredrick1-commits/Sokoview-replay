@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ReferenceLine,
+  CartesianGrid, ReferenceLine, Customized,
 } from "recharts";
 import {
   Play, Pause, RotateCcw, Plug, FlaskConical, ChevronDown, AlertTriangle,
   Check, Loader2, Info,
 } from "lucide-react";
-import { logoUrl, monogramColor, monogramText } from "./logos.js";
+import { logoUrl, monogramColor, monogramText, brandColor } from "./logos.js";
 
 /* ============================================================================
    1. DATA ADAPTER  —  the only part you rewrite for the real Sokoview API
@@ -328,6 +328,35 @@ const prettyDate = (d) =>
     day: "numeric", month: "short", year: "numeric",
   });
 
+const monYr = (d) =>
+  new Date(d + "T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+
+/** TZS amount for the headline: full digits under a million, compact above. */
+const amt = (n) => "TZS " + (n >= 1e6 ? axisCompact(n) : nf.format(Math.round(n)));
+
+const FREQ_WORD = { weekly: "/week", monthly: "/month", quarterly: "/quarter", yearly: "/year" };
+
+/** Round up to a friendly axis ceiling: 1 / 1.2 / 1.5 / 2 / 2.5 / 3 / 4 / 5 / 6 / 8 × 10^k. */
+function niceCeil(x) {
+  if (!isFinite(x) || x <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(x)));
+  const m = x / p;
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((v) => v >= m);
+  return step * p;
+}
+
+const MONO = "'IBM Plex Mono', ui-monospace, monospace";
+
+/** Terse axis labels: 120M, 1.5B, 82K — no trailing zeros. */
+const axisCompact = (n) => {
+  if (n == null || !isFinite(n)) return "";
+  const a = Math.abs(n);
+  const trim = (x) => String(parseFloat(x.toFixed(2)));
+  if (a >= 1e9) return trim(n / 1e9) + "B";
+  if (a >= 1e6) return trim(n / 1e6) + "M";
+  if (a >= 1e3) return trim(n / 1e3) + "K";
+  return trim(n);
+};
 const A_COLOR = "#22c55e";
 const B_COLOR = "#0a0a0a";
 
@@ -371,46 +400,150 @@ function StockMark({ symbol, size = 20, ring = false }) {
 }
 
 /**
- * The travelling marker on the chart. Recharts hands us the pixel position of
- * each point; we only draw on the final one, so it rides the end of the line as
- * the replay advances.
- *
- * SVG <image> cannot fail over to a monogram the way <img> can, so unmapped
- * symbols get the monogram drawn directly.
+ * The bucko-style end-of-line callout layer, drawn as a Recharts <Customized>
+ * overlay so it knows where BOTH lines end and can keep the two callouts from
+ * colliding. Each callout: circled company logo riding the line end, a rank
+ * badge, a crown on the leader, the company name, the value in a highlighter
+ * pill, and the return underneath.
  */
-function makeLeadMarker(symbol, color, lastIndex, size = 30) {
+function LogoDot({ cx, cy, R, color, symbol, rank }) {
   const url = logoUrl(symbol);
-  const id = `clip-${symbol.replace(/[^A-Za-z0-9]/g, "")}`;
-  return (props) => {
-    const { cx, cy, index } = props;
-    if (index !== lastIndex || cx == null || cy == null) return null;
-    const r = size / 2;
+  const clip = `co-${symbol.replace(/[^A-Za-z0-9]/g, "")}-${Math.round(cx)}-${Math.round(cy)}`;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={R + 2.5} fill="#fff" />
+      <circle cx={cx} cy={cy} r={R + 2.5} fill="none" stroke={color} strokeWidth={2.5} />
+      {url ? (
+        <>
+          <clipPath id={clip}>
+            <circle cx={cx} cy={cy} r={R} />
+          </clipPath>
+          <image
+            href={url} x={cx - R} y={cy - R} width={R * 2} height={R * 2}
+            clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid meet"
+          />
+        </>
+      ) : (
+        <>
+          <circle cx={cx} cy={cy} r={R} fill={monogramColor(symbol)} />
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+                fontSize={R * 0.66} fontWeight="800" fill="#fff">
+            {monogramText(symbol)}
+          </text>
+        </>
+      )}
+      {rank != null && (
+        <>
+          <circle cx={cx + R * 0.8} cy={cy + R * 0.8} r={9} fill={color} stroke="#fff" strokeWidth={2} />
+          <text x={cx + R * 0.8} y={cy + R * 0.8 + 0.5} textAnchor="middle" dominantBaseline="central"
+                fontSize="10" fontWeight="800" fill="#fff">
+            {rank}
+          </text>
+        </>
+      )}
+    </g>
+  );
+}
+
+function Callout({ leg, R, narrow, svgW }) {
+  const { cx, ty, color, symbol, name, rank, crown, pill, sub, subUp } = leg;
+  const pillFs = narrow ? 11 : 13.5;
+  const pillW = Math.round(pill.length * pillFs * 0.66) + 20;
+  const pillH = narrow ? 21 : 26;
+
+  if (narrow) {
+    const px = Math.min(Math.max(cx - pillW / 2, 4), svgW - pillW - 4);
     return (
-      <g style={{ pointerEvents: "none" }}>
-        <circle cx={cx} cy={cy} r={r + 2.5} fill="#fff" />
-        <circle cx={cx} cy={cy} r={r + 2.5} fill="none" stroke={color} strokeWidth={2} />
-        {url ? (
-          <>
-            <clipPath id={id}>
-              <circle cx={cx} cy={cy} r={r} />
-            </clipPath>
-            <image
-              href={url} x={cx - r} y={cy - r} width={size} height={size}
-              clipPath={`url(#${id})`} preserveAspectRatio="xMidYMid meet"
-            />
-          </>
-        ) : (
-          <>
-            <circle cx={cx} cy={cy} r={r} fill={monogramColor(symbol)} />
-            <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-              fontSize={size * 0.34} fontWeight="800" fill="#fff">
-              {monogramText(symbol)}
-            </text>
-          </>
+      <g>
+        {crown && (
+          <text x={cx} y={ty - R - 9} textAnchor="middle" fontSize="15">👑</text>
         )}
+        <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} />
+        <rect x={px} y={ty + R + 7} width={pillW} height={pillH} rx={6} fill="#fde047" />
+        <text x={px + pillW / 2} y={ty + R + 7 + pillH / 2 + 0.5} textAnchor="middle"
+              dominantBaseline="central" fontSize={pillFs} fontWeight="800" fill="#0a0a0a"
+              style={{ fontVariantNumeric: "tabular-nums" }}>
+          {pill}
+        </text>
       </g>
     );
-  };
+  }
+
+  const blockW = Math.max(pillW, (name.length + symbol.length) * 7.6 + 18);
+  let tx = cx + R + 13;
+  if (tx + blockW > svgW - 6) {
+    const leftTx = cx - R - 13 - blockW;
+    tx = leftTx >= 8 ? leftTx : Math.max(8, svgW - 6 - blockW);
+  }
+  return (
+    <g>
+      <text x={tx} y={ty - 17}>
+        <tspan fontSize="13" fontWeight="800" fill={color}>{name}</tspan>
+        <tspan dx="7" fontSize="9.5" fontWeight="700" fill="#9ca3af" letterSpacing="1.5">{symbol}</tspan>
+      </text>
+      <rect x={tx} y={ty - 10} width={pillW} height={pillH} rx={7} fill="#fde047" />
+      <text x={tx + 10} y={ty - 10 + pillH / 2 + 0.5} dominantBaseline="central"
+            fontSize={pillFs} fontWeight="800" fill="#0a0a0a"
+            style={{ fontVariantNumeric: "tabular-nums" }}>
+        {pill}
+      </text>
+      {sub && (
+        <text x={tx + 1} y={ty + pillH + 6} fontSize="11" fontWeight="800"
+              fill={subUp ? "#16a34a" : "#dc2626"}
+              style={{ fontVariantNumeric: "tabular-nums" }}>
+          {sub}
+        </text>
+      )}
+      <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} />
+      {crown && (
+        <text x={cx} y={ty - R - 10} textAnchor="middle" fontSize="17">👑</text>
+      )}
+    </g>
+  );
+}
+
+function ChartCallouts(props) {
+  const { formattedGraphicalItems, offset, width, legs } = props;
+  if (!legs?.length || !formattedGraphicalItems || !offset) return null;
+  const narrow = (offset.width ?? 0) < 480;
+  const R = narrow ? 15 : 21;
+
+  const resolved = [];
+  for (const leg of legs) {
+    const gi = formattedGraphicalItems.find(
+      (g) => (g?.item?.props?.dataKey ?? g?.props?.dataKey) === leg.dataKey
+    );
+    const pts = gi?.props?.points || gi?.item?.props?.points || [];
+    let last = null;
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const pt = pts[i];
+      if (pt && pt.y != null && isFinite(pt.y) && pt.payload?.[leg.dataKey] != null) { last = pt; break; }
+    }
+    if (last) resolved.push({ ...leg, cx: last.x, ty: last.y });
+  }
+  if (!resolved.length) return null;
+
+  const minY = offset.top + R + (resolved.some((l) => l.crown) ? 24 : 6);
+  const maxY = offset.top + offset.height - R - (narrow ? 34 : 6);
+  resolved.forEach((l) => { l.ty = Math.max(minY, Math.min(maxY, l.ty)); });
+  if (resolved.length === 2) {
+    const gap = narrow ? 72 : 82;
+    const [a, b] = [...resolved].sort((u, v) => u.ty - v.ty);
+    if (b.ty - a.ty < gap) {
+      const mid = (a.ty + b.ty) / 2;
+      a.ty = Math.max(minY, mid - gap / 2);
+      b.ty = Math.min(maxY, a.ty + gap);
+      a.ty = Math.min(a.ty, b.ty - gap);
+    }
+  }
+
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {resolved.map((l) => (
+        <Callout key={l.dataKey} leg={l} R={R} narrow={narrow} svgW={width} />
+      ))}
+    </g>
+  );
 }
 
 function Logo() {
@@ -764,14 +897,16 @@ export default function SokoviewReplay() {
     };
   };
 
-  const simA = useMemo(
-    () => (barsA.length ? simulate(barsA, cfg(legA, periodsA, bOn ? legB : null, periodsB)) : null),
-    [barsA, legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
+  const cfgA = useMemo(
+    () => cfg(legA, periodsA, bOn ? legB : null, periodsB),
+    [legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
   );
-  const simB = useMemo(
-    () => (bOn && barsB.length ? simulate(barsB, cfg(legB, periodsB, legA, periodsA)) : null),
-    [barsB, legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
+  const cfgB = useMemo(
+    () => cfg(legB, periodsB, legA, periodsA),
+    [legA, legB, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
   );
+  const simA = useMemo(() => (barsA.length ? simulate(barsA, cfgA) : null), [barsA, cfgA]);
+  const simB = useMemo(() => (bOn && barsB.length ? simulate(barsB, cfgB) : null), [bOn, barsB, cfgB]);
 
   /* ---- keep t in range ---- */
   useEffect(() => {
@@ -810,39 +945,107 @@ export default function SokoviewReplay() {
   const mA = useMemo(() => (simA ? metricsAt(simA, t) : null), [simA, t]);
   const mB = useMemo(() => (simB ? metricsAt(simB, t) : null), [simB, t]);
 
-  /* ---- chart data ---- */
-  const chartData = useMemo(() => {
-    if (!simA) return [];
-    const out = [];
-    for (let i = 0; i <= t && i < simA.path.length; i++) {
+  /* ---- line colours: company brand colours when two stocks race ---- */
+  const { colorA, colorB } = useMemo(() => {
+    if (!bOn || legA.symbol === legB.symbol) return { colorA: A_COLOR, colorB: B_COLOR };
+    const ca = brandColor(legA.symbol);
+    let cb = brandColor(legB.symbol);
+    if (cb === ca) cb = "#0a0a0a";
+    return { colorA: ca, colorB: cb };
+  }, [bOn, legA.symbol, legB.symbol]);
+
+  const nameOf = (sym) => UNIVERSE[sym]?.name ?? sym;
+
+  /* ---- chart data ----
+     The axes stay FIXED across the whole replay (bucko-style): every row of the
+     window is always present, values are simply null beyond t so the lines grow
+     across a still frame instead of the frame rescaling. Phantom future rows
+     extend the x-axis ~24% past the end, which both reads as "the story
+     continues" and reserves room for the end-of-line callouts. */
+  const { chartData, xTicks, yDomain, yTicks } = useMemo(() => {
+    if (!simA) return { chartData: [], xTicks: [], yDomain: [0, 1], yTicks: undefined };
+    const nA = simA.path.length;
+    const rows = [];
+    for (let i = 0; i < nA; i++) {
       const a = simA.path[i];
       const b = simB?.path[i];
+      const on = i <= t;
       const row = { date: a.date };
       if (chartMode === "value") {
-        row.aVal = a.value; row.aInv = a.invested;
-        if (b) { row.bVal = b.value; row.bInv = b.invested; }
+        row.aVal = on ? a.value : null;
+        row.aInv = on ? a.invested : null;
+        if (b) { row.bVal = on ? b.value : null; row.bInv = on ? b.invested : null; }
       } else if (chartMode === "roi") {
-        row.aVal = a.invested > 0 ? ((a.value - a.invested) / a.invested) * 100 : 0;
-        if (b) row.bVal = b.invested > 0 ? ((b.value - b.invested) / b.invested) * 100 : 0;
+        row.aVal = on ? (a.invested > 0 ? ((a.value - a.invested) / a.invested) * 100 : 0) : null;
+        if (b) row.bVal = on ? (b.invested > 0 ? ((b.value - b.invested) / b.invested) * 100 : 0) : null;
       } else {
-        row.aVal = a.price;
-        if (b) row.bVal = b.price;
+        row.aVal = on ? a.price : null;
+        if (b) row.bVal = on ? b.price : null;
       }
-      out.push(row);
+      rows.push(row);
     }
-    return out;
+    const step = nA > 1
+      ? (Date.parse(simA.path[nA - 1].date) - Date.parse(simA.path[0].date)) / (nA - 1)
+      : 7 * DAY;
+    const pad = Math.max(4, Math.round(nA * 0.27));
+    const lastMs = Date.parse(simA.path[nA - 1].date);
+    for (let k = 1; k <= pad; k++) {
+      rows.push({ date: new Date(lastMs + step * k).toISOString().slice(0, 10) });
+    }
+    const xTicks = [rows[0].date, rows[Math.floor(rows.length / 2)].date, rows[rows.length - 1].date];
+
+    let hi = 0, lo = 0;
+    const scan = (path) => {
+      for (const q of path) {
+        if (chartMode === "value") hi = Math.max(hi, q.value, q.invested);
+        else if (chartMode === "price") hi = Math.max(hi, q.price);
+        else {
+          const r = q.invested > 0 ? ((q.value - q.invested) / q.invested) * 100 : 0;
+          hi = Math.max(hi, r); lo = Math.min(lo, r);
+        }
+      }
+    };
+    scan(simA.path);
+    if (simB) scan(simB.path);
+    const yMaxN = niceCeil((hi || 1) * 1.06);
+    let yDomain, yTicks;
+    if (chartMode === "roi") {
+      yDomain = [Math.min(0, Math.floor(lo * 1.06)), yMaxN];
+      yTicks = undefined;
+    } else {
+      yDomain = [0, yMaxN];
+      yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * yMaxN));
+    }
+    return { chartData: rows, xTicks, yDomain, yTicks };
   }, [simA, simB, t, chartMode]);
 
-  /* ---- travelling logo markers ---- */
-  const lastIdx = chartData.length - 1;
-  const leadA = useMemo(
-    () => makeLeadMarker(legA.symbol, A_COLOR, lastIdx),
-    [legA.symbol, lastIdx]
-  );
-  const leadB = useMemo(
-    () => makeLeadMarker(legB.symbol, B_COLOR, lastIdx),
-    [legB.symbol, lastIdx]
-  );
+  /* ---- end-of-line callouts ---- */
+  const calloutLegs = useMemo(() => {
+    if (!mA) return [];
+    const same = bOn && mB && legA.symbol === legB.symbol;
+    const planWord = (leg) =>
+      leg.strategy === "lump" ? "One-time" :
+      { weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" }[leg.freq] + " top-up";
+    const mk = (dataKey, leg, m, color) => ({
+      dataKey,
+      symbol: leg.symbol,
+      name: same ? planWord(leg) : nameOf(leg.symbol),
+      color,
+      value: m.value,
+      pill: chartMode === "roi" ? pct(m.roi) : chartMode === "price" ? tzs(m.price) : tzs(m.value),
+      sub: chartMode === "value" ? pct(m.roi) : null,
+      subUp: m.roi >= 0,
+    });
+    const legs = [mk("aVal", legA, mA, colorA)];
+    if (bOn && mB) legs.push(mk("bVal", legB, mB, colorB));
+    if (legs.length === 2) {
+      const aLead = mA.value >= mB.value;
+      legs[0].rank = aLead ? 1 : 2;
+      legs[1].rank = aLead ? 2 : 1;
+      legs[aLead ? 0 : 1].crown = true;
+    }
+    return legs;
+  }, [mA, mB, legA.symbol, legB.symbol, bOn, chartMode, colorA, colorB]);
 
   /* ---- presets ---- */
   const applyPreset = (p) => {
@@ -913,21 +1116,56 @@ export default function SokoviewReplay() {
     }
   };
 
-  /* ---- derived headline ---- */
-  const leader = mA && mB ? (mA.value >= mB.value ? "A" : "B") : null;
-  const gap = mA && mB ? Math.abs(mA.value - mB.value) : 0;
-  const total = mA && mB ? mA.value + mB.value : 0;
-  const shareA = total > 0 ? (mA.value / total) * 100 : 50;
+  /* ---- the editorial headline, built from the current settings ---- */
+  const phraseOf = (leg, c) =>
+    leg.strategy === "lump" ? `${amt(c.lumpAmount)} once` : `${amt(c.perPeriod)}${FREQ_WORD[leg.freq]}`;
+  const phraseA = phraseOf(legA, cfgA);
+  const phraseB = phraseOf(legB, cfgB);
+  const startMon = barsA.length ? monYr(barsA[0].date) : "";
+  const sameSymbol = bOn && legA.symbol === legB.symbol;
+  const samePlan = bOn && !sameSymbol && phraseA === phraseB;
 
-  const labelFor = (leg, m) =>
+  const Amount = ({ children }) => <span className="text-green-500">{children}</span>;
+  const Name = ({ children }) => <span className="headline-serif">{children}</span>;
+  const When = ({ children }) => <span className="text-gray-400">{children}</span>;
+
+  const headline = !bOn ? (
+    <>You put <Amount>{phraseA}</Amount> into <Name>{nameOf(legA.symbol)}</Name> starting <When>{startMon}</When></>
+  ) : sameSymbol ? (
+    <>You put <Amount>{phraseA}</Amount> vs <Amount>{phraseB}</Amount> into <Name>{nameOf(legA.symbol)}</Name> starting <When>{startMon}</When></>
+  ) : samePlan ? (
+    <>You put <Amount>{phraseA}</Amount> into each of <Name>{nameOf(legA.symbol)}</Name> and <Name>{nameOf(legB.symbol)}</Name> starting <When>{startMon}</When></>
+  ) : (
+    <>You put <Amount>{phraseA}</Amount> into <Name>{nameOf(legA.symbol)}</Name> and <Amount>{phraseB}</Amount> into <Name>{nameOf(legB.symbol)}</Name> starting <When>{startMon}</When></>
+  );
+
+  const chipLegs = sameSymbol || !bOn
+    ? [{ symbol: legA.symbol, color: colorA }]
+    : [{ symbol: legA.symbol, color: colorA }, { symbol: legB.symbol, color: colorB }];
+
+  /* ---- leaderboard ---- */
+  const labelFor = (leg) =>
     `${leg.symbol} · ${leg.strategy === "lump" ? "one-time" : `${leg.freq} top-up`}`;
+  const board = useMemo(() => {
+    const rows = [];
+    if (mA) rows.push({ key: "A", symbol: legA.symbol, name: nameOf(legA.symbol), plan: labelFor(legA), value: mA.value, roi: mA.roi, color: colorA });
+    if (bOn && mB) rows.push({ key: "B", symbol: legB.symbol, name: nameOf(legB.symbol), plan: labelFor(legB), value: mB.value, roi: mB.roi, color: colorB });
+    return rows.sort((u, v) => v.value - u.value);
+  }, [mA, mB, bOn, legA, legB, colorA, colorB]);
+
+  const caption = source === "demo"
+    ? "SAMPLE DATA · ILLUSTRATIVE ONLY"
+    : chartMode === "value" ? "HISTORICAL PORTFOLIO VALUE · ADJUSTED PRICES"
+    : chartMode === "roi" ? "RETURN ON MONEY INVESTED · ADJUSTED PRICES"
+    : "HISTORICAL SHARE PRICE · ADJUSTED";
 
   const noData = n === 0;
 
   return (
-    <div className="w-full min-h-screen bg-white text-neutral-950 antialiased">
+    <div className="w-full min-h-screen bg-[#f8f8f6] text-neutral-950 antialiased">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Instrument+Serif:ital@1&family=IBM+Plex+Mono:wght@500;600&display=swap');
+        .headline-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.06em; letter-spacing: 0; }
         * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
         .dots { background-image: radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 20px 20px; }
@@ -1053,88 +1291,252 @@ export default function SokoviewReplay() {
         </div>
       )}
 
-      <main className="max-w-6xl mx-auto px-5 py-6">
-        {/* ---------- hero: the race ---------- */}
-        <section className="dots border border-gray-200 rounded-2xl p-5 mb-5 relative overflow-hidden">
-          <div
-            className="absolute -top-16 -right-16 w-80 h-80 rounded-full pointer-events-none"
-            style={{ background: "radial-gradient(circle, rgba(34,197,94,.14) 0%, transparent 68%)" }}
-          />
-          <div className="relative">
-            {noData ? (
-              <div className="py-10 text-center">
-                <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
-                <div className="text-[12px] text-gray-500">
-                  Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
-                </div>
+      <main className="max-w-6xl mx-auto px-5 pb-10">
+        {noData ? (
+          <section className="py-20 text-center">
+            <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
+            <div className="text-[12px] text-gray-500">
+              Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
+            </div>
+          </section>
+        ) : (
+          <>
+            {/* ---------- editorial headline ---------- */}
+            <section className="relative text-center pt-9 pb-7">
+              <div
+                className="absolute -top-10 left-1/2 -translate-x-1/2 w-[520px] h-[320px] rounded-full pointer-events-none"
+                style={{ background: "radial-gradient(circle, rgba(34,197,94,.10) 0%, transparent 68%)" }}
+              />
+              <h1 className="relative max-w-3xl mx-auto text-[27px] sm:text-[40px] font-extrabold leading-[1.08] tracking-[-0.03em] text-neutral-950">
+                {headline}
+              </h1>
+              <div className="relative flex items-center justify-center gap-8 mt-6 flex-wrap">
+                {chipLegs.map((c) => (
+                  <div key={c.symbol} className="flex items-center gap-2.5">
+                    <span className="rounded-full bg-white p-[3px]" style={{ boxShadow: `0 0 0 2.5px ${c.color}` }}>
+                      <StockMark symbol={c.symbol} size={40} />
+                    </span>
+                    <div className="text-left">
+                      <div className="text-[13px] font-extrabold leading-tight">{nameOf(c.symbol)}</div>
+                      <div className="text-[9px] font-bold tracking-[0.2em] text-gray-400" style={{ fontFamily: MONO }}>
+                        {c.symbol}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <>
-                <div className="flex items-start justify-between flex-wrap gap-4 mb-5">
-                  <div>
-                    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-green-600 mb-1.5">
-                      Replaying from {prettyDate(barsA[0].date)}
-                    </div>
-                    <div className="text-[34px] sm:text-[42px] font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums">
-                      {prettyDate(barsA[t]?.date ?? barsA[0].date)}
-                    </div>
-                    <div className="text-[11px] text-gray-500 font-semibold mt-1 tabular-nums">
-                      {legA.symbol} at {tzs(mA?.price)}
-                      {mB && legB.symbol !== legA.symbol && (
-                        <> · {legB.symbol} at {tzs(mB.price)}</>
-                      )}
-                    </div>
-                  </div>
+            </section>
 
-                  {mA && mB && (
-                    <div className="text-right">
-                      <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-1">
-                        Ahead by
-                      </div>
-                      <div
-                        className="text-[26px] sm:text-[32px] font-extrabold leading-none tabular-nums tracking-tight"
-                        style={{ color: leader === "A" ? A_COLOR : B_COLOR }}
+            <div className="grid lg:grid-cols-[300px_1fr] gap-5">
+              {/* ---------- left rail ---------- */}
+              <aside className="space-y-4">
+                <div>
+                  <Eyebrow>Start from</Eyebrow>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[2016, 2018, 2020, 2022, 2024].map((y) => (
+                      <button
+                        key={y}
+                        onClick={() => setStartYear(y)}
+                        className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
+                          startYear === y
+                            ? "bg-neutral-950 text-white border-neutral-950"
+                            : "border-gray-300 text-gray-500 hover:border-neutral-900 bg-white"
+                        }`}
                       >
-                        {compact(gap)}
-                      </div>
-                      <div className="text-[11px] font-bold text-gray-500 mt-1">
-                        {leader === "A" ? labelFor(legA) : labelFor(legB)}
-                      </div>
-                    </div>
-                  )}
+                        {y}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {/* the race bar — signature element */}
-                {mA && mB && (
-                  <div className="mb-5">
-                    <div className="flex h-9 rounded-lg overflow-hidden border border-gray-200">
-                      <div
-                        className="flex items-center px-3 transition-all duration-100"
-                        style={{ width: `${Math.max(shareA, 8)}%`, background: A_COLOR }}
+                <div>
+                  <Eyebrow>Quick comparisons</Eyebrow>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { k: "lumpVsDca", l: "One-time vs recurring" },
+                      { k: "stockVsStockLump", l: "Stock vs stock, one-time" },
+                      { k: "stockVsStockDca", l: "Stock vs stock, recurring" },
+                      { k: "single", l: "Single stock only" },
+                    ].map((pr) => (
+                      <button
+                        key={pr.k}
+                        onClick={() => applyPreset(pr.k)}
+                        className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-gray-300 bg-white hover:border-green-500 hover:bg-green-500/5 leading-tight"
                       >
-                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
-                          {compact(mA.value)}
-                        </span>
-                      </div>
-                      <div
-                        className="flex items-center justify-end px-3 flex-1 transition-all duration-100"
-                        style={{ background: B_COLOR }}
-                      >
-                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
-                          {compact(mB.value)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between mt-1.5 text-[10.5px] font-bold">
-                      <span className="text-green-600 flex items-center gap-1.5">
-                        <StockMark symbol={legA.symbol} size={16} /> {labelFor(legA)}
-                      </span>
-                      <span className="text-neutral-900 flex items-center gap-1.5">
-                        {labelFor(legB)} <StockMark symbol={legB.symbol} size={16} />
+                        {pr.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <LegPanel
+                  leg={legA}
+                  set={(pr) => setLegA((st) => ({ ...st, ...pr }))}
+                  color={colorA}
+                  title="Plan A"
+                  enabled
+                  canDisable={false}
+                  symbols={symbols}
+                  lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
+                  lockedValue={legB.perPeriod * periodsB}
+                  liq={liqOf[legA.symbol]}
+                />
+                <LegPanel
+                  leg={legB}
+                  set={(pr) => setLegB((st) => ({ ...st, ...pr }))}
+                  color={bOn ? colorB : B_COLOR}
+                  title="Plan B"
+                  enabled={bOn}
+                  onToggle={() => setBOn((v) => !v)}
+                  canDisable
+                  symbols={symbols}
+                  lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
+                  lockedValue={legA.perPeriod * periodsA}
+                  liq={liqOf[legB.symbol]}
+                />
+
+                <div className="rounded-xl border border-gray-300 bg-white p-3.5 space-y-3">
+                  <Eyebrow>Assumptions</Eyebrow>
+                  {bOn &&
+                    ((legA.strategy === "lump" && legB.strategy === "dca") ||
+                      (legB.strategy === "lump" && legA.strategy === "dca")) && (
+                      <Toggle
+                        label="Match total capital"
+                        checked={matchCapital}
+                        onChange={setMatchCapital}
+                        hint="Sets the one-time amount equal to everything the recurring plan contributes, so the comparison is like-for-like."
+                      />
+                    )}
+                  <Toggle
+                    label="Whole shares only"
+                    checked={whole}
+                    onChange={setWhole}
+                    hint="The DSE doesn't trade fractions. Leftover cash waits for the next buy."
+                  />
+                  <Toggle
+                    label="Reinvest dividends"
+                    checked={reinvest}
+                    onChange={setReinvest}
+                    hint="Off means dividends are held as cash and still counted in your total."
+                  />
+                  <div>
+                    <Eyebrow>Brokerage fee</Eyebrow>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0} max={3} step={0.1}
+                        value={feePct}
+                        onChange={(e) => setFeePct(Number(e.target.value))}
+                        className="flex-1 h-4"
+                      />
+                      <span className="text-[12px] font-extrabold tabular-nums w-11 text-right">
+                        {feePct.toFixed(1)}%
                       </span>
                     </div>
                   </div>
-                )}
+                </div>
+              </aside>
+
+              {/* ---------- right: the frame, transport, leaderboard, details ---------- */}
+              <section className="space-y-4">
+                {/* the shareable frame */}
+                <div className="bg-white border border-gray-200 rounded-3xl px-4 sm:px-6 pt-5 pb-2 shadow-[0_10px_44px_rgba(0,0,0,0.06)]">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div className="text-[38px] sm:text-[52px] font-extrabold tracking-[-0.035em] leading-none tabular-nums text-neutral-800">
+                        {barsA[t] ? monYr(barsA[t].date) : ""}
+                      </div>
+                      <div className="text-[10.5px] text-gray-400 font-semibold mt-1.5 tabular-nums">
+                        {legA.symbol} at {tzs(mA?.price)}
+                        {mB && legB.symbol !== legA.symbol && <> · {legB.symbol} at {tzs(mB.price)}</>}
+                      </div>
+                    </div>
+                    <Seg
+                      value={chartMode}
+                      onChange={setChartMode}
+                      options={[
+                        { v: "value", l: "Value" },
+                        { v: "roi", l: "Return %" },
+                        { v: "price", l: "Price" },
+                      ]}
+                    />
+                  </div>
+
+                  <div style={{ width: "100%", height: 380 }}>
+                    <ResponsiveContainer>
+                      <ComposedChart data={chartData} margin={{ top: 30, right: 34, bottom: 4, left: 0 }}>
+                        <CartesianGrid stroke="#eceff1" vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          ticks={xTicks}
+                          interval={0}
+                          tick={{ fontSize: 12, fill: "#374151", fontWeight: 600, fontFamily: MONO }}
+                          tickFormatter={monYr}
+                          tickMargin={10}
+                          axisLine={{ stroke: "#0a0a0a", strokeWidth: 2 }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          domain={yDomain}
+                          ticks={yTicks}
+                          tick={{ fontSize: 12, fill: "#374151", fontWeight: 600, fontFamily: MONO }}
+                          tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : axisCompact(v))}
+                          axisLine={{ stroke: "#0a0a0a", strokeWidth: 2 }}
+                          tickLine={false}
+                          width={50}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: 12, border: "1px solid #e5e7eb",
+                            fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
+                          }}
+                          labelFormatter={prettyDate}
+                          formatter={(v, name) => [
+                            chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
+                            {
+                              aVal: nameOf(legA.symbol) + (sameSymbol ? " · A" : ""),
+                              bVal: nameOf(legB.symbol) + (sameSymbol ? " · B" : ""),
+                              aInv: "Money in (A)", bInv: "Money in (B)",
+                            }[name] ?? name,
+                          ]}
+                        />
+                        {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                        {chartMode === "value" && (
+                          <Line type="stepAfter" dataKey="aInv" stroke="#d4d4d4" strokeWidth={1.5}
+                                strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                        )}
+                        {chartMode === "value" && bOn && (
+                          <Line type="stepAfter" dataKey="bInv" stroke="#d4d4d4" strokeWidth={1.5}
+                                strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                        )}
+                        <Line type="monotone" dataKey="aVal" stroke={colorA} strokeWidth={2.6}
+                              dot={false} activeDot={false} isAnimationActive={false} />
+                        {bOn && (
+                          <Line type="monotone" dataKey="bVal" stroke={colorB} strokeWidth={2.6}
+                                dot={false} activeDot={false} isAnimationActive={false} />
+                        )}
+                        <Customized component={(cp) => <ChartCallouts {...cp} legs={calloutLegs} />} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="relative flex items-center justify-center py-2.5 mt-1 border-t border-gray-100">
+                    <span
+                      className="text-[9px] text-gray-400 font-semibold"
+                      style={{ fontFamily: MONO, letterSpacing: "0.14em" }}
+                    >
+                      {caption}
+                    </span>
+                    <span className="absolute right-0 hidden min-[480px]:flex items-center gap-1.5 opacity-70">
+                      <span className="w-4 h-4 bg-neutral-950 rounded-[4px] flex items-end gap-[1.5px] px-[3px] pb-[3px]">
+                        <span className="w-[2px] h-[3px] rounded-[1px] bg-green-500" />
+                        <span className="w-[2px] h-[5px] rounded-[1px] bg-green-500" />
+                        <span className="w-[2px] h-[7px] rounded-[1px] bg-green-500" />
+                      </span>
+                      <span className="text-[10.5px] font-extrabold tracking-tight text-neutral-800">sokoview</span>
+                    </span>
+                  </div>
+                </div>
 
                 {/* transport */}
                 <div className="flex items-center gap-3 flex-wrap">
@@ -1151,7 +1553,7 @@ export default function SokoviewReplay() {
                   </button>
                   <button
                     onClick={restart}
-                    className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center hover:border-neutral-900 flex-shrink-0"
+                    className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center hover:border-neutral-900 flex-shrink-0"
                     aria-label="Restart replay"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1168,285 +1570,124 @@ export default function SokoviewReplay() {
                   />
 
                   <div className="flex gap-1 p-1 bg-gray-100 rounded-lg flex-shrink-0">
-                    {[0.5, 1, 2, 4].map((s) => (
+                    {[0.5, 1, 2, 4].map((sp) => (
                       <button
-                        key={s}
-                        onClick={() => setSpeed(s)}
+                        key={sp}
+                        onClick={() => setSpeed(sp)}
                         className={`text-[10.5px] font-bold py-1 px-2 rounded ${
-                          speed === s ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"
+                          speed === sp ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"
                         }`}
                       >
-                        {s}×
+                        {sp}×
                       </button>
                     ))}
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-        </section>
 
-        {!noData && (
-          <div className="grid lg:grid-cols-[300px_1fr] gap-5">
-            {/* ---------- left rail ---------- */}
-            <aside className="space-y-4">
-              <div>
-                <Eyebrow>Start from</Eyebrow>
-                <div className="flex flex-wrap gap-1.5">
-                  {[2016, 2018, 2020, 2022, 2024].map((y) => (
-                    <button
-                      key={y}
-                      onClick={() => setStartYear(y)}
-                      className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
-                        startYear === y
-                          ? "bg-neutral-950 text-white border-neutral-950"
-                          : "border-gray-300 text-gray-500 hover:border-neutral-900"
+                {/* leaderboard */}
+                <div className={`grid gap-3 ${board.length > 1 ? "sm:grid-cols-2" : ""}`}>
+                  {board.map((r, i) => (
+                    <div
+                      key={r.key}
+                      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                        i === 0 && board.length > 1
+                          ? "bg-yellow-50 border-yellow-300"
+                          : "bg-white border-gray-200"
                       }`}
                     >
-                      {y}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Eyebrow>Quick comparisons</Eyebrow>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { k: "lumpVsDca", l: "One-time vs recurring" },
-                    { k: "stockVsStockLump", l: "Stock vs stock, one-time" },
-                    { k: "stockVsStockDca", l: "Stock vs stock, recurring" },
-                    { k: "single", l: "Single stock only" },
-                  ].map((p) => (
-                    <button
-                      key={p.k}
-                      onClick={() => applyPreset(p.k)}
-                      className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-gray-300 hover:border-green-500 hover:bg-green-500/5 leading-tight"
-                    >
-                      {p.l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <LegPanel
-                leg={legA}
-                set={(p) => setLegA((s) => ({ ...s, ...p }))}
-                color={A_COLOR}
-                title="Plan A"
-                enabled
-                canDisable={false}
-                symbols={symbols}
-                lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
-                lockedValue={legB.perPeriod * periodsB}
-                liq={liqOf[legA.symbol]}
-              />
-              <LegPanel
-                leg={legB}
-                set={(p) => setLegB((s) => ({ ...s, ...p }))}
-                color={B_COLOR}
-                title="Plan B"
-                enabled={bOn}
-                onToggle={() => setBOn((v) => !v)}
-                canDisable
-                symbols={symbols}
-                lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
-                lockedValue={legA.perPeriod * periodsA}
-                liq={liqOf[legB.symbol]}
-              />
-
-              <div className="rounded-xl border border-gray-300 p-3.5 space-y-3">
-                <Eyebrow>Assumptions</Eyebrow>
-                {bOn &&
-                  ((legA.strategy === "lump" && legB.strategy === "dca") ||
-                    (legB.strategy === "lump" && legA.strategy === "dca")) && (
-                    <Toggle
-                      label="Match total capital"
-                      checked={matchCapital}
-                      onChange={setMatchCapital}
-                      hint="Sets the one-time amount equal to everything the recurring plan contributes, so the comparison is like-for-like."
-                    />
-                  )}
-                <Toggle
-                  label="Whole shares only"
-                  checked={whole}
-                  onChange={setWhole}
-                  hint="The DSE doesn't trade fractions. Leftover cash waits for the next buy."
-                />
-                <Toggle
-                  label="Reinvest dividends"
-                  checked={reinvest}
-                  onChange={setReinvest}
-                  hint="Off means dividends are held as cash and still counted in your total."
-                />
-                <div>
-                  <Eyebrow>Brokerage fee</Eyebrow>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={0} max={3} step={0.1}
-                      value={feePct}
-                      onChange={(e) => setFeePct(Number(e.target.value))}
-                      className="flex-1 h-4"
-                    />
-                    <span className="text-[12px] font-extrabold tabular-nums w-11 text-right">
-                      {feePct.toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </aside>
-
-            {/* ---------- right: chart + results ---------- */}
-            <section className="space-y-4">
-              <div className="border border-gray-200 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <Seg
-                    value={chartMode}
-                    onChange={setChartMode}
-                    options={[
-                      { v: "value", l: "Portfolio value" },
-                      { v: "roi", l: "Return %" },
-                      { v: "price", l: "Share price" },
-                    ]}
-                  />
-                  <div className="flex items-center gap-3 text-[10px] font-bold">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-[2px]" style={{ background: A_COLOR }} /> Plan A
-                    </span>
-                    {bOn && (
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-[2px]" style={{ background: B_COLOR }} /> Plan B
+                      <span className="text-[12px] font-bold text-gray-300 w-4 flex-shrink-0" style={{ fontFamily: MONO }}>
+                        {i + 1}
                       </span>
-                    )}
-                    {chartMode === "value" && (
-                      <span className="flex items-center gap-1.5 text-gray-400">
-                        <span className="w-3 border-t-2 border-dashed border-gray-400" /> Money in
+                      <span className="rounded-full bg-white p-[2px] flex-shrink-0" style={{ boxShadow: `0 0 0 2px ${r.color}` }}>
+                        <StockMark symbol={r.symbol} size={30} />
                       </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ width: "100%", height: 300 }}>
-                  <ResponsiveContainer>
-                    <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
-                      <CartesianGrid stroke="#f3f4f6" vertical={false} />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
-                        tickFormatter={(d) => d.slice(0, 7)}
-                        minTickGap={50}
-                        axisLine={{ stroke: "#e5e7eb" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
-                        tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
-                        axisLine={false}
-                        tickLine={false}
-                        width={52}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: 12, border: "1px solid #e5e7eb",
-                          fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
-                        }}
-                        labelFormatter={prettyDate}
-                        formatter={(v, name) => [
-                          chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
-                          { aVal: "Plan A", bVal: "Plan B", aInv: "A money in", bInv: "B money in" }[name] ?? name,
-                        ]}
-                      />
-                      {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
-                      {chartMode === "value" && (
-                        <Line type="stepAfter" dataKey="aInv" stroke="#86efac" strokeWidth={1.5}
-                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                      )}
-                      {chartMode === "value" && bOn && (
-                        <Line type="stepAfter" dataKey="bInv" stroke="#9ca3af" strokeWidth={1.5}
-                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                      )}
-                      <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.4}
-                            dot={leadA} activeDot={false} isAnimationActive={false} />
-                      {bOn && (
-                        <Line type="monotone" dataKey="bVal" stroke={B_COLOR} strokeWidth={2.4}
-                              dot={leadB} activeDot={false} isAnimationActive={false} />
-                      )}
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* result cards */}
-              <div className={`grid gap-4 ${bOn ? "md:grid-cols-2" : ""}`}>
-                {[
-                  { m: mA, leg: legA, color: A_COLOR, title: "Plan A", show: true },
-                  { m: mB, leg: legB, color: B_COLOR, title: "Plan B", show: bOn },
-                ]
-                  .filter((x) => x.show && x.m)
-                  .map(({ m, leg, color, title }) => (
-                    <div key={title} className="border border-gray-200 rounded-2xl overflow-hidden">
-                      <div
-                        className="px-4 py-2.5 flex items-center justify-between"
-                        style={{ background: color }}
-                      >
-                        <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
-                          <StockMark symbol={leg.symbol} size={18} ring />
-                          {title} · {leg.symbol}
-                        </span>
-                        <span className="text-[10px] font-bold text-white/70">
-                          {leg.strategy === "lump" ? "One-time" : `${leg.freq} top-up`}
-                        </span>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-extrabold truncate leading-tight">{r.name}</div>
+                        <div className="text-[9px] font-bold tracking-[0.1em] text-gray-400 uppercase whitespace-nowrap" style={{ fontFamily: MONO }}>
+                          {r.plan}
+                        </div>
                       </div>
-                      <div className="p-4">
-                        <div className="mb-4">
-                          <Stat
-                            label="Worth today"
-                            value={tzs(m.value)}
-                            big
-                            tone={m.gain >= 0 ? "green" : "red"}
-                            sub={`${pct(m.roi)} on ${tzs(m.invested)} invested`}
-                          />
+                      <div className="ml-auto text-right flex-shrink-0">
+                        <div className="text-[15px] font-extrabold tabular-nums leading-tight">{tzs(r.value)}</div>
+                        <div className={`text-[10.5px] font-bold tabular-nums ${r.roi >= 0 ? "text-green-600" : "text-red-600"}`}>
+                          {pct(r.roi)}
                         </div>
-                        <div className="grid grid-cols-2 gap-y-3.5 gap-x-3">
-                          <Stat
-                            label="Profit"
-                            value={tzs(m.gain)}
-                            tone={m.gain >= 0 ? "green" : "red"}
-                          />
-                          <Stat
-                            label="Annualised (money-weighted)"
-                            value={pct(m.irr)}
-                            tone={m.irr == null ? "muted" : m.irr >= 0 ? "green" : "red"}
-                          />
-                          <Stat label="Shares held" value={nf.format(Math.round(m.shares))} />
-                          <Stat label="Average cost" value={tzs(m.avgCost)} />
-                          <Stat label="Dividends" value={tzs(m.divTotal)} sub={reinvest ? "reinvested" : "held as cash"} />
-                          <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
-                        </div>
-                        {m.cash > 1 && (
-                          <div className="mt-3 pt-3 border-t border-gray-100 text-[10.5px] text-gray-400 font-semibold tabular-nums">
-                            {tzs(m.cash)} still uninvested
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
-              </div>
+                </div>
 
-              {/* method note */}
-              <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
-                <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
-                <p>
-                  Comparing a one-time investment against a recurring one on total return alone is
-                  misleading — the recurring plan has less money in the market for less time.
-                  The <strong className="text-neutral-900">annualised money-weighted return</strong> above
-                  accounts for when each contribution actually landed, so it's the fairer number
-                  to judge them by. Past results don't predict future ones.
-                </p>
-              </div>
-            </section>
-          </div>
+                {/* result cards */}
+                <div className={`grid gap-4 ${bOn ? "md:grid-cols-2" : ""}`}>
+                  {[
+                    { m: mA, leg: legA, color: colorA, title: "Plan A", show: true },
+                    { m: mB, leg: legB, color: colorB, title: "Plan B", show: bOn },
+                  ]
+                    .filter((x) => x.show && x.m)
+                    .map(({ m, leg, color, title }) => (
+                      <div key={title} className="border border-gray-200 bg-white rounded-2xl overflow-hidden">
+                        <div
+                          className="px-4 py-2.5 flex items-center justify-between"
+                          style={{ background: color }}
+                        >
+                          <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
+                            <StockMark symbol={leg.symbol} size={18} ring />
+                            {title} · {leg.symbol}
+                          </span>
+                          <span className="text-[10px] font-bold text-white/70">
+                            {leg.strategy === "lump" ? "One-time" : `${leg.freq} top-up`}
+                          </span>
+                        </div>
+                        <div className="p-4">
+                          <div className="mb-4">
+                            <Stat
+                              label="Worth today"
+                              value={tzs(m.value)}
+                              big
+                              tone={m.gain >= 0 ? "green" : "red"}
+                              sub={`${pct(m.roi)} on ${tzs(m.invested)} invested`}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-y-3.5 gap-x-3">
+                            <Stat
+                              label="Profit"
+                              value={tzs(m.gain)}
+                              tone={m.gain >= 0 ? "green" : "red"}
+                            />
+                            <Stat
+                              label="Annualised (money-weighted)"
+                              value={pct(m.irr)}
+                              tone={m.irr == null ? "muted" : m.irr >= 0 ? "green" : "red"}
+                            />
+                            <Stat label="Shares held" value={nf.format(Math.round(m.shares))} />
+                            <Stat label="Average cost" value={tzs(m.avgCost)} />
+                            <Stat label="Dividends" value={tzs(m.divTotal)} sub={reinvest ? "reinvested" : "held as cash"} />
+                            <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
+                          </div>
+                          {m.cash > 1 && (
+                            <div className="mt-3 pt-3 border-t border-gray-100 text-[10.5px] text-gray-400 font-semibold tabular-nums">
+                              {tzs(m.cash)} still uninvested
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+
+                {/* method note */}
+                <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 bg-white rounded-xl p-3.5">
+                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+                  <p>
+                    Comparing a one-time investment against a recurring one on total return alone is
+                    misleading — the recurring plan has less money in the market for less time.
+                    The <strong className="text-neutral-900">annualised money-weighted return</strong> above
+                    accounts for when each contribution actually landed, so it's the fairer number
+                    to judge them by. Past results don't predict future ones.
+                  </p>
+                </div>
+              </section>
+            </div>
+          </>
         )}
       </main>
     </div>

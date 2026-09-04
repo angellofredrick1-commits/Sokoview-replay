@@ -19,6 +19,36 @@ export function logoUrl(symbol) {
   return AVAILABLE.has(symbol) ? `/logos/${symbol}.png` : null;
 }
 
+/**
+ * Brand-ish colour per company, bucko-style: when two different stocks race,
+ * each line takes the company's colour instead of generic Plan A / Plan B.
+ * Approximations of each brand's dominant hue; anything unlisted falls back
+ * to the deterministic monogram colour.
+ */
+const BRAND = {
+  CRDB: "#16a34a",  // CRDB green
+  NMB:  "#f59e0b",  // NMB orange
+  TBL:  "#1d4ed8",  // TBL blue
+  TCC:  "#dc2626",  // TCC red
+  TPCC: "#ca8a04",  // Twiga yellow
+  DSE:  "#7c3aed",
+  SWIS: "#b91c1c",
+  VODA: "#e60000",  // Vodacom red
+  KCB:  "#166534",
+  KA:   "#991b1b",
+  EABL: "#a16207",
+  PAL:  "#0e7490",
+  JATU: "#65a30d",
+  UCHUMI: "#0891b2",
+  DCB:  "#2563eb",
+  TTP:  "#0f766e",
+  YETU: "#c2410c",
+};
+
+export function brandColor(symbol) {
+  return BRAND[symbol] ?? monogramColor(symbol);
+}
+
 /** Deterministic colour per symbol, so the fallback is stable and distinguishable. */
 export function monogramColor(symbol) {
   let h = 0;
