@@ -6,6 +6,7 @@ import {
   RefreshCw, AlertTriangle, Check, Database, Loader2, Settings,
   TrendingUp, TrendingDown, Minus, Activity, Calendar, Info,
 } from "lucide-react";
+import { logoUrl, monogramColor, monogramText } from "./logos.js";
 
 /* ============================================================================
    Supabase read layer — publishable key only, read-only under RLS
@@ -63,6 +64,32 @@ const BLACK = "#0a0a0a";
 /* ============================================================================
    UI atoms
    ==========================================================================*/
+
+
+/** Shared company mark. Falls back to a monogram when there is no logo file. */
+function StockMark({ symbol, size = 20, ring = false }) {
+  const [failed, setFailed] = React.useState(false);
+  const url = logoUrl(symbol);
+  const px = { width: size, height: size };
+  if (!url || failed) {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded-full flex-shrink-0 font-extrabold text-white"
+        style={{ ...px, background: monogramColor(symbol),
+                 fontSize: Math.max(7, size * 0.34), letterSpacing: "-0.02em",
+                 boxShadow: ring ? "0 0 0 2px #fff" : undefined }}
+        aria-label={symbol}
+      >
+        {monogramText(symbol)}
+      </span>
+    );
+  }
+  return (
+    <img src={url} alt={symbol} onError={() => setFailed(true)} loading="lazy"
+      className="rounded-full object-contain bg-white flex-shrink-0"
+      style={{ ...px, boxShadow: ring ? "0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.2)" : undefined }} />
+  );
+}
 
 function Logo() {
   return (
@@ -530,7 +557,9 @@ export default function CaptureMonitor() {
                         <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded border ${tone}`}>
                           {label}
                         </span>
-                        <span className="text-[12px] font-extrabold">{a.symbol}</span>
+                        <span className="text-[12px] font-extrabold flex items-center gap-1.5">
+                          <StockMark symbol={a.symbol} size={16} /> {a.symbol}
+                        </span>
                         <span className="text-[11px] text-gray-500">{a.detail}</span>
                       </div>
                     );
@@ -589,9 +618,14 @@ export default function CaptureMonitor() {
                       return (
                         <tr key={r.symbol} className="hover:bg-gray-50">
                           <td className="px-4 py-2">
-                            <div className="font-extrabold text-neutral-950">{r.symbol}</div>
-                            <div className="text-[9.5px] text-gray-400 truncate max-w-[160px]">
-                              {nameOf[r.symbol] !== r.symbol ? nameOf[r.symbol] : ""}
+                            <div className="flex items-center gap-2.5">
+                              <StockMark symbol={r.symbol} size={22} />
+                              <div className="min-w-0">
+                                <div className="font-extrabold text-neutral-950">{r.symbol}</div>
+                                <div className="text-[9.5px] text-gray-400 truncate max-w-[150px]">
+                                  {nameOf[r.symbol] !== r.symbol ? nameOf[r.symbol] : ""}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right font-bold tabular-nums">{tzs(r.close)}</td>
@@ -656,8 +690,9 @@ export default function CaptureMonitor() {
                   </div>
                   {model.symbols.map((s) => (
                     <div key={s} className="flex items-center gap-[3px] mb-[3px]">
-                      <div className="w-[88px] text-[9.5px] font-bold text-gray-600 truncate text-right pr-1">
-                        {s}
+                      <div className="w-[88px] flex items-center justify-end gap-1.5 pr-1">
+                        <span className="text-[9.5px] font-bold text-gray-600 truncate">{s}</span>
+                        <StockMark symbol={s} size={13} />
                       </div>
                       {model.dates.slice(-30).map((d) => {
                         const has = model.covered.has(`${s}|${d}`);
@@ -753,7 +788,9 @@ export default function CaptureMonitor() {
                 <div className="divide-y divide-gray-100">
                   {model.recon.slice(0, 20).map((r, i) => (
                     <div key={i} className="px-4 py-2.5 flex items-center gap-4 flex-wrap">
-                      <span className="text-[12px] font-extrabold w-20">{r.symbol}</span>
+                      <span className="text-[12px] font-extrabold w-24 flex items-center gap-1.5">
+                        <StockMark symbol={r.symbol} size={16} /> {r.symbol}
+                      </span>
                       <span className="text-[10.5px] text-gray-500 w-24">{shortDate(r.date)}</span>
                       {r.vals.map((v) => (
                         <span key={v.source} className="text-[11px] tabular-nums">

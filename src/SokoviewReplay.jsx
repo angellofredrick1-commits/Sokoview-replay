@@ -7,6 +7,7 @@ import {
   Play, Pause, RotateCcw, Plug, FlaskConical, ChevronDown, AlertTriangle,
   Check, Loader2, Info,
 } from "lucide-react";
+import { logoUrl, monogramColor, monogramText } from "./logos.js";
 
 /* ============================================================================
    1. DATA ADAPTER  —  the only part you rewrite for the real Sokoview API
@@ -334,6 +335,84 @@ const B_COLOR = "#0a0a0a";
    4. UI ATOMS
    ==========================================================================*/
 
+/**
+ * Company mark. Falls back to a coloured monogram when there is no mapped logo
+ * or the image fails to load — which happens more than you would like, since
+ * these are hotlinked from the exchange.
+ */
+function StockMark({ symbol, size = 20, ring = false }) {
+  const [failed, setFailed] = React.useState(false);
+  const url = logoUrl(symbol);
+  const px = { width: size, height: size };
+
+  if (!url || failed) {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded-full flex-shrink-0 font-extrabold text-white"
+        style={{ ...px, background: monogramColor(symbol),
+                 fontSize: Math.max(7, size * 0.34), letterSpacing: "-0.02em",
+                 boxShadow: ring ? "0 0 0 2px #fff" : undefined }}
+        aria-label={symbol}
+      >
+        {monogramText(symbol)}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={symbol}
+      onError={() => setFailed(true)}
+      loading="lazy"
+      className="rounded-full object-contain bg-white flex-shrink-0"
+      style={{ ...px, boxShadow: ring ? "0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.2)" : undefined }}
+    />
+  );
+}
+
+/**
+ * The travelling marker on the chart. Recharts hands us the pixel position of
+ * each point; we only draw on the final one, so it rides the end of the line as
+ * the replay advances.
+ *
+ * SVG <image> cannot fail over to a monogram the way <img> can, so unmapped
+ * symbols get the monogram drawn directly.
+ */
+function makeLeadMarker(symbol, color, lastIndex, size = 30) {
+  const url = logoUrl(symbol);
+  const id = `clip-${symbol.replace(/[^A-Za-z0-9]/g, "")}`;
+  return (props) => {
+    const { cx, cy, index } = props;
+    if (index !== lastIndex || cx == null || cy == null) return null;
+    const r = size / 2;
+    return (
+      <g style={{ pointerEvents: "none" }}>
+        <circle cx={cx} cy={cy} r={r + 2.5} fill="#fff" />
+        <circle cx={cx} cy={cy} r={r + 2.5} fill="none" stroke={color} strokeWidth={2} />
+        {url ? (
+          <>
+            <clipPath id={id}>
+              <circle cx={cx} cy={cy} r={r} />
+            </clipPath>
+            <image
+              href={url} x={cx - r} y={cy - r} width={size} height={size}
+              clipPath={`url(#${id})`} preserveAspectRatio="xMidYMid meet"
+            />
+          </>
+        ) : (
+          <>
+            <circle cx={cx} cy={cy} r={r} fill={monogramColor(symbol)} />
+            <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+              fontSize={size * 0.34} fontWeight="800" fill="#fff">
+              {monogramText(symbol)}
+            </text>
+          </>
+        )}
+      </g>
+    );
+  };
+}
+
 function Logo() {
   return (
     <div className="flex items-center gap-2">
@@ -504,7 +583,8 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
       <div className={dim ? "pointer-events-none" : ""}>
         <div className="mb-3">
           <Eyebrow>Stock</Eyebrow>
-          <div className="relative">
+          <div className="relative flex items-center gap-2">
+            <StockMark symbol={leg.symbol} size={26} />
             <select
               value={leg.symbol}
               onChange={(e) => set({ symbol: e.target.value })}
@@ -752,6 +832,17 @@ export default function SokoviewReplay() {
     }
     return out;
   }, [simA, simB, t, chartMode]);
+
+  /* ---- travelling logo markers ---- */
+  const lastIdx = chartData.length - 1;
+  const leadA = useMemo(
+    () => makeLeadMarker(legA.symbol, A_COLOR, lastIdx),
+    [legA.symbol, lastIdx]
+  );
+  const leadB = useMemo(
+    () => makeLeadMarker(legB.symbol, B_COLOR, lastIdx),
+    [legB.symbol, lastIdx]
+  );
 
   /* ---- presets ---- */
   const applyPreset = (p) => {
@@ -1035,8 +1126,12 @@ export default function SokoviewReplay() {
                       </div>
                     </div>
                     <div className="flex justify-between mt-1.5 text-[10.5px] font-bold">
-                      <span className="text-green-600">{labelFor(legA)}</span>
-                      <span className="text-neutral-900">{labelFor(legB)}</span>
+                      <span className="text-green-600 flex items-center gap-1.5">
+                        <StockMark symbol={legA.symbol} size={16} /> {labelFor(legA)}
+                      </span>
+                      <span className="text-neutral-900 flex items-center gap-1.5">
+                        {labelFor(legB)} <StockMark symbol={legB.symbol} size={16} />
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1272,10 +1367,10 @@ export default function SokoviewReplay() {
                               strokeDasharray="4 3" dot={false} isAnimationActive={false} />
                       )}
                       <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.4}
-                            dot={false} isAnimationActive={false} />
+                            dot={leadA} activeDot={false} isAnimationActive={false} />
                       {bOn && (
                         <Line type="monotone" dataKey="bVal" stroke={B_COLOR} strokeWidth={2.4}
-                              dot={false} isAnimationActive={false} />
+                              dot={leadB} activeDot={false} isAnimationActive={false} />
                       )}
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -1295,7 +1390,8 @@ export default function SokoviewReplay() {
                         className="px-4 py-2.5 flex items-center justify-between"
                         style={{ background: color }}
                       >
-                        <span className="text-[11px] font-extrabold text-white">
+                        <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
+                          <StockMark symbol={leg.symbol} size={18} ring />
                           {title} · {leg.symbol}
                         </span>
                         <span className="text-[10px] font-bold text-white/70">

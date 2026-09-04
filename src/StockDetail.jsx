@@ -6,6 +6,7 @@ import {
 import {
   RefreshCw, Loader2, AlertTriangle, Settings, Info, ChevronDown,
 } from "lucide-react";
+import { logoUrl, monogramColor, monogramText } from "./logos.js";
 
 /* ============================================================================
    Supabase
@@ -81,6 +82,32 @@ const RANGES = [
 /* ============================================================================
    UI atoms
    ==========================================================================*/
+
+
+/** Shared company mark. Falls back to a monogram when there is no logo file. */
+function StockMark({ symbol, size = 20, ring = false }) {
+  const [failed, setFailed] = React.useState(false);
+  const url = logoUrl(symbol);
+  const px = { width: size, height: size };
+  if (!url || failed) {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded-full flex-shrink-0 font-extrabold text-white"
+        style={{ ...px, background: monogramColor(symbol),
+                 fontSize: Math.max(7, size * 0.34), letterSpacing: "-0.02em",
+                 boxShadow: ring ? "0 0 0 2px #fff" : undefined }}
+        aria-label={symbol}
+      >
+        {monogramText(symbol)}
+      </span>
+    );
+  }
+  return (
+    <img src={url} alt={symbol} onError={() => setFailed(true)} loading="lazy"
+      className="rounded-full object-contain bg-white flex-shrink-0"
+      style={{ ...px, boxShadow: ring ? "0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.2)" : undefined }} />
+  );
+}
 
 function Logo() {
   return (
@@ -436,6 +463,7 @@ export default function StockDetail() {
         {/* ---------- selector + range ---------- */}
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div className="flex items-end gap-3">
+            <StockMark symbol={symbol} size={40} />
             <div className="relative">
               <select value={symbol} onChange={(e) => setSymbol(e.target.value)}
                 className="appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none">
