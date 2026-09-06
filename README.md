@@ -134,3 +134,65 @@ kept in Sokoview's own brand language (Sora, green, dot texture):
 
 Fonts: `index.html` now also loads Instrument Serif (italic) and IBM Plex Mono
 (axis labels, tickers, captions) from Google Fonts.
+
+---
+
+## Dashboard, themes, mobile
+
+**No data-source switch.** The deploy either has `VITE_SUPABASE_URL` +
+`VITE_SUPABASE_PUBLISHABLE_KEY` and runs on real prices, or it doesn't and falls
+back to sample paths. The header shows one pill — **Live**, **Connecting** or
+**Offline** — and nothing about providers, endpoints or keys. Load failures
+surface as a single line under the header. The old paste-JSON debug panel is
+gone; the resolution control moved into the left rail.
+
+**Light / dark.** Colours are CSS custom properties in `src/index.css`, exposed
+to Tailwind through `@theme inline` and flipped by a `.dark` class on `<html>`,
+so one utility (`bg-surface`, `text-ink`, `border-line`…) works in both themes.
+The choice is stored in `localStorage`; a tiny inline script in `index.html`
+applies it before first paint so dark-theme users get no white flash. Untouched
+first visits follow the OS preference. Recharts can't read CSS variables, so the
+chart's own colours are mirrored in the `CHART` object in `SokoviewReplay.jsx`.
+
+**Mobile.** Below `lg` the chart frame comes first and the controls collapse
+into a **Settings** drawer that shows the current stocks and start year on its
+face. The chart shrinks to 300px, axis labels shorten (`Jan '18`), callouts drop
+to logo + value pill, and the watermark hides so it can't collide with the
+caption.
+
+## Claude insights
+
+Every distinct simulation gets two or three plain-language observations under the
+leaderboard, written by Claude from the result figures.
+
+Set one env var to enable it:
+
+```bash
+npx netlify env:set ANTHROPIC_API_KEY 'sk-ant-...' --secret
+```
+
+Without the key the card just says insights aren't configured; nothing else
+breaks.
+
+**How the cost is kept down.** The browser never holds the API key — it posts a
+summary to `/api/insight` (`netlify/functions/insight.mjs`), which adds the key
+server-side.
+
+- **Model: `claude-haiku-4-5-20251001`** — $1 / $5 per million input / output
+  tokens, the cheapest current Claude model, and this task is summarising about
+  thirty numbers.
+- **Summaries, not series.** Each leg sends its totals plus six checkpoints, so a
+  request is roughly 400 input tokens. Ten years of daily bars is never sent.
+- **`max_tokens: 320`**, so a runaway generation is impossible.
+- **Keyed on configuration, not playback.** The cache key ignores the scrub
+  position, so playing the replay, dragging the timeline or switching between
+  Value/Return/Price costs nothing. Config changes are debounced 1.1s, so
+  dragging the fee slider is one call rather than thirty.
+- **Session cache + a 24h edge cache**, so revisiting a setup or hitting a preset
+  is usually free.
+
+That works out around **US$0.0015 per insight** — roughly $1.50 per thousand.
+
+The system prompt forbids predictions and buy/sell recommendations; the model
+describes what the numbers show, and the card is labelled as not investment
+advice.

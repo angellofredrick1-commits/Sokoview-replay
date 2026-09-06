@@ -4,8 +4,8 @@ import {
   CartesianGrid, ReferenceLine, Customized,
 } from "recharts";
 import {
-  Play, Pause, RotateCcw, Plug, FlaskConical, ChevronDown, AlertTriangle,
-  Check, Loader2, Info,
+  Play, Pause, RotateCcw, ChevronDown, AlertTriangle, Loader2, Info,
+  Sun, Moon, Sparkles, SlidersHorizontal, RefreshCw,
 } from "lucide-react";
 import { logoUrl, monogramColor, monogramText, brandColor } from "./logos.js";
 
@@ -361,6 +361,41 @@ const A_COLOR = "#22c55e";
 const B_COLOR = "#0a0a0a";
 
 /* ============================================================================
+   3b. THEME
+   ==========================================================================*/
+
+const THEME_KEY = "sokoview-replay-theme";
+
+/** Resolved once before first paint by the inline script in index.html. */
+function readTheme() {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+function useTheme() {
+  const [theme, setTheme] = useState(readTheme);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
+  return [theme, () => setTheme((v) => (v === "dark" ? "light" : "dark"))];
+}
+
+/**
+ * Recharts takes concrete colours, not CSS variables, so the chart internals
+ * are mirrored here rather than themed in CSS.
+ */
+const CHART = {
+  light: { grid: "#eceff1", axis: "#0a0a0a", axisW: 2, tick: "#374151", dash: "#d4d4d4",
+           halo: "#ffffff", pill: "#fde047", pillInk: "#0a0a0a", plan: "#0a0a0a",
+           pos: "#16a34a", neg: "#dc2626", zero: "#d1d5db" },
+  dark:  { grid: "#262d2f", axis: "#8b9499", axisW: 1.5, tick: "#9aa3aa", dash: "#3a4245",
+           halo: "#15191a", pill: "#facc15", pillInk: "#0a0a0a", plan: "#e8eaea",
+           pos: "#4ade80", neg: "#f87171", zero: "#3a4245" },
+};
+
+/* ============================================================================
    4. UI ATOMS
    ==========================================================================*/
 
@@ -406,12 +441,12 @@ function StockMark({ symbol, size = 20, ring = false }) {
  * badge, a crown on the leader, the company name, the value in a highlighter
  * pill, and the return underneath.
  */
-function LogoDot({ cx, cy, R, color, symbol, rank }) {
+function LogoDot({ cx, cy, R, color, symbol, rank, C }) {
   const url = logoUrl(symbol);
   const clip = `co-${symbol.replace(/[^A-Za-z0-9]/g, "")}-${Math.round(cx)}-${Math.round(cy)}`;
   return (
     <g>
-      <circle cx={cx} cy={cy} r={R + 2.5} fill="#fff" />
+      <circle cx={cx} cy={cy} r={R + 2.5} fill={C.halo} />
       <circle cx={cx} cy={cy} r={R + 2.5} fill="none" stroke={color} strokeWidth={2.5} />
       {url ? (
         <>
@@ -434,7 +469,7 @@ function LogoDot({ cx, cy, R, color, symbol, rank }) {
       )}
       {rank != null && (
         <>
-          <circle cx={cx + R * 0.8} cy={cy + R * 0.8} r={9} fill={color} stroke="#fff" strokeWidth={2} />
+          <circle cx={cx + R * 0.8} cy={cy + R * 0.8} r={9} fill={color} stroke={C.halo} strokeWidth={2} />
           <text x={cx + R * 0.8} y={cy + R * 0.8 + 0.5} textAnchor="middle" dominantBaseline="central"
                 fontSize="10" fontWeight="800" fill="#fff">
             {rank}
@@ -445,7 +480,7 @@ function LogoDot({ cx, cy, R, color, symbol, rank }) {
   );
 }
 
-function Callout({ leg, R, narrow, svgW }) {
+function Callout({ leg, R, narrow, svgW, C }) {
   const { cx, ty, color, symbol, name, rank, crown, pill, sub, subUp } = leg;
   const pillFs = narrow ? 11 : 13.5;
   const pillW = Math.round(pill.length * pillFs * 0.66) + 20;
@@ -458,10 +493,10 @@ function Callout({ leg, R, narrow, svgW }) {
         {crown && (
           <text x={cx} y={ty - R - 9} textAnchor="middle" fontSize="15">👑</text>
         )}
-        <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} />
-        <rect x={px} y={ty + R + 7} width={pillW} height={pillH} rx={6} fill="#fde047" />
+        <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} C={C} />
+        <rect x={px} y={ty + R + 7} width={pillW} height={pillH} rx={6} fill={C.pill} />
         <text x={px + pillW / 2} y={ty + R + 7 + pillH / 2 + 0.5} textAnchor="middle"
-              dominantBaseline="central" fontSize={pillFs} fontWeight="800" fill="#0a0a0a"
+              dominantBaseline="central" fontSize={pillFs} fontWeight="800" fill={C.pillInk}
               style={{ fontVariantNumeric: "tabular-nums" }}>
           {pill}
         </text>
@@ -479,22 +514,22 @@ function Callout({ leg, R, narrow, svgW }) {
     <g>
       <text x={tx} y={ty - 17}>
         <tspan fontSize="13" fontWeight="800" fill={color}>{name}</tspan>
-        <tspan dx="7" fontSize="9.5" fontWeight="700" fill="#9ca3af" letterSpacing="1.5">{symbol}</tspan>
+        <tspan dx="7" fontSize="9.5" fontWeight="700" fill={C.tick} letterSpacing="1.5">{symbol}</tspan>
       </text>
-      <rect x={tx} y={ty - 10} width={pillW} height={pillH} rx={7} fill="#fde047" />
+      <rect x={tx} y={ty - 10} width={pillW} height={pillH} rx={7} fill={C.pill} />
       <text x={tx + 10} y={ty - 10 + pillH / 2 + 0.5} dominantBaseline="central"
-            fontSize={pillFs} fontWeight="800" fill="#0a0a0a"
+            fontSize={pillFs} fontWeight="800" fill={C.pillInk}
             style={{ fontVariantNumeric: "tabular-nums" }}>
         {pill}
       </text>
       {sub && (
         <text x={tx + 1} y={ty + pillH + 6} fontSize="11" fontWeight="800"
-              fill={subUp ? "#16a34a" : "#dc2626"}
+              fill={subUp ? C.pos : C.neg}
               style={{ fontVariantNumeric: "tabular-nums" }}>
           {sub}
         </text>
       )}
-      <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} />
+      <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} C={C} />
       {crown && (
         <text x={cx} y={ty - R - 10} textAnchor="middle" fontSize="17">👑</text>
       )}
@@ -503,7 +538,7 @@ function Callout({ leg, R, narrow, svgW }) {
 }
 
 function ChartCallouts(props) {
-  const { formattedGraphicalItems, offset, width, legs } = props;
+  const { formattedGraphicalItems, offset, width, legs, C } = props;
   if (!legs?.length || !formattedGraphicalItems || !offset) return null;
   const narrow = (offset.width ?? 0) < 480;
   const R = narrow ? 15 : 21;
@@ -540,7 +575,7 @@ function ChartCallouts(props) {
   return (
     <g style={{ pointerEvents: "none" }}>
       {resolved.map((l) => (
-        <Callout key={l.dataKey} leg={l} R={R} narrow={narrow} svgW={width} />
+        <Callout key={l.dataKey} leg={l} R={R} narrow={narrow} svgW={width} C={C} />
       ))}
     </g>
   );
@@ -549,24 +584,47 @@ function ChartCallouts(props) {
 function Logo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="w-7 h-7 bg-neutral-950 rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
+      <div className="w-7 h-7 bg-ink rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
         <div className="w-[3.5px] h-[5px] rounded-sm bg-green-500" />
         <div className="w-[3.5px] h-[8px] rounded-sm bg-green-500" />
         <div className="w-[3.5px] h-[11px] rounded-sm bg-green-500" />
       </div>
-      <span className="text-[15px] font-extrabold tracking-tight text-neutral-950">
+      <span className="text-[15px] font-extrabold tracking-tight text-ink">
         sokoview
       </span>
-      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-green-600 bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-pos bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
         replay
       </span>
     </div>
   );
 }
 
+/**
+ * The only thing the header says about data: connected or not. No provider
+ * names, no endpoints, no switch.
+ */
+function StatusPill({ live, conn }) {
+  const loading = conn.state === "loading";
+  const ok = live && conn.state !== "err";
+  const label = loading ? "Connecting" : ok ? "Live" : "Offline";
+  const dot = loading ? "#f59e0b" : ok ? "#22c55e" : "#9ca3af";
+  return (
+    <span
+      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-soft border border-line rounded-full pl-2 pr-2.5 py-[5px]"
+      title={ok ? "Connected to live price history" : "Running on sample data"}
+    >
+      <span
+        className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+        style={{ background: dot, boxShadow: `0 0 0 3px ${dot}22` }}
+      />
+      {label}
+    </span>
+  );
+}
+
 function Eyebrow({ children }) {
   return (
-    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-2">
+    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-mute mb-2">
       {children}
     </div>
   );
@@ -576,15 +634,15 @@ function Seg({ options, value, onChange, accent = "green" }) {
   const on =
     accent === "green"
       ? "bg-green-500 text-white"
-      : "bg-neutral-950 text-white";
+      : "bg-ink text-page";
   return (
-    <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+    <div className="flex gap-1 p-1 bg-raised rounded-lg">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`flex-1 text-[11px] font-bold py-1.5 px-2 rounded-md transition-colors ${
-            value === o.v ? on : "text-gray-500 hover:text-neutral-900"
+          className={`flex-1 whitespace-nowrap text-[11px] font-bold py-1.5 px-2 rounded-md transition-colors ${
+            value === o.v ? on : "text-soft hover:text-ink"
           }`}
         >
           {o.l}
@@ -600,11 +658,11 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
       <Eyebrow>{label}</Eyebrow>
       <div
         className={`flex items-center border rounded-lg overflow-hidden ${
-          disabled ? "bg-gray-50 border-gray-200" : "bg-white border-gray-300"
+          disabled ? "bg-raised border-line" : "bg-surface border-line"
         }`}
       >
         {prefix && (
-          <span className="pl-3 text-[11px] font-bold text-gray-400">{prefix}</span>
+          <span className="pl-3 text-[11px] font-bold text-mute">{prefix}</span>
         )}
         <input
           type="number"
@@ -612,7 +670,7 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
           disabled={disabled}
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-          className="w-full px-2.5 py-2 text-[13px] font-bold text-neutral-950 outline-none tabular-nums bg-transparent disabled:text-gray-400"
+          className="w-full px-2.5 py-2 text-[13px] font-bold text-ink outline-none tabular-nums bg-transparent disabled:text-mute"
         />
       </div>
     </label>
@@ -627,18 +685,18 @@ function Toggle({ label, checked, onChange, hint }) {
     >
       <div
         className={`mt-[1px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-          checked ? "bg-green-500" : "bg-gray-300"
+          checked ? "bg-green-500" : "bg-line"
         }`}
       >
         <div
-          className={`absolute top-[2px] w-[14px] h-[14px] bg-white rounded-full transition-all ${
+          className={`absolute top-[2px] w-[14px] h-[14px] bg-surface rounded-full transition-all ${
             checked ? "left-[16px]" : "left-[2px]"
           }`}
         />
       </div>
       <div>
-        <div className="text-[12px] font-bold text-neutral-900 leading-tight">{label}</div>
-        {hint && <div className="text-[10.5px] text-gray-400 leading-snug mt-0.5">{hint}</div>}
+        <div className="text-[12px] font-bold text-ink leading-tight">{label}</div>
+        {hint && <div className="text-[10.5px] text-mute leading-snug mt-0.5">{hint}</div>}
       </div>
     </button>
   );
@@ -646,14 +704,14 @@ function Toggle({ label, checked, onChange, hint }) {
 
 function Stat({ label, value, sub, tone = "default", big }) {
   const tones = {
-    default: "text-neutral-950",
-    green: "text-green-600",
-    red: "text-red-600",
-    muted: "text-gray-400",
+    default: "text-ink",
+    green: "text-pos",
+    red: "text-neg",
+    muted: "text-mute",
   };
   return (
     <div>
-      <div className="text-[8.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
+      <div className="text-[8.5px] font-bold uppercase tracking-[0.1em] text-mute">
         {label}
       </div>
       <div
@@ -663,7 +721,7 @@ function Stat({ label, value, sub, tone = "default", big }) {
       >
         {value}
       </div>
-      {sub && <div className="text-[10px] text-gray-400 tabular-nums">{sub}</div>}
+      {sub && <div className="text-[10px] text-mute tabular-nums">{sub}</div>}
     </div>
   );
 }
@@ -679,8 +737,8 @@ function LiquidityNote({ liq }) {
   if (!bad && !warn) return null;
   return (
     <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
-      bad ? "bg-red-50 border-red-200 text-red-700"
-          : "bg-amber-50 border-amber-200 text-amber-700"}`}>
+      bad ? "bg-alertbg border-alertln text-alerttx"
+          : "bg-warnbg border-warnln text-warntx"}`}>
       Traded on {liq.pctTraded.toFixed(0)}% of days, longest gap {liq.dry} days.
       {bad
         ? " Too thin to simulate regular buying — treat any result as indicative only."
@@ -694,19 +752,19 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
   return (
     <div
       className={`rounded-xl border p-3.5 transition-opacity ${
-        dim ? "opacity-40 border-gray-200" : "border-gray-300"
+        dim ? "opacity-40 border-line" : "border-line"
       }`}
-      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : "#d4d4d4" } : {}}
+      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : color + "55" } : {}}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-          <span className="text-[12px] font-extrabold text-neutral-950">{title}</span>
+          <span className="text-[12px] font-extrabold text-ink">{title}</span>
         </div>
         {canDisable && (
           <button
             onClick={onToggle}
-            className="text-[10px] font-bold text-gray-400 hover:text-neutral-900"
+            className="text-[10px] font-bold text-mute hover:text-ink"
           >
             {enabled ? "Remove" : "Add"}
           </button>
@@ -721,7 +779,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
             <select
               value={leg.symbol}
               onChange={(e) => set({ symbol: e.target.value })}
-              className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-neutral-950 outline-none"
+              className="w-full appearance-none bg-surface border border-line rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-ink outline-none"
             >
               {symbols.map((s) => (
                 <option key={s} value={s}>
@@ -730,7 +788,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3.5 h-3.5 text-mute absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
           <LiquidityNote liq={liq} />
         </div>
@@ -763,14 +821,14 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                 <select
                   value={leg.freq}
                   onChange={(e) => set({ freq: e.target.value })}
-                  className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-7 py-2 text-[12.5px] font-bold text-neutral-950 outline-none"
+                  className="w-full appearance-none bg-surface border border-line rounded-lg pl-3 pr-7 py-2 text-[12.5px] font-bold text-ink outline-none"
                 >
                   <option value="weekly">Weekly</option>
                   <option value="monthly">Monthly</option>
                   <option value="quarterly">Quarterly</option>
                   <option value="yearly">Yearly</option>
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-mute absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -785,7 +843,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
               disabled={lockLump}
             />
             {lockLump && (
-              <div className="text-[10px] text-gray-400 mt-1 leading-snug">
+              <div className="text-[10px] text-mute mt-1 leading-snug">
                 Matched to the other plan's total. Turn off capital matching to set it yourself.
               </div>
             )}
@@ -801,16 +859,28 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
    ==========================================================================*/
 
 export default function SokoviewReplay() {
-  /* ---- source ---- */
-  const [source, setSource] = useState(SB_URL && SB_KEY ? "live" : "demo");
+  /* ---- source ----
+     There is no data-source switch in the UI any more: the deploy either has
+     Supabase credentials and runs on real prices, or it doesn't and falls back
+     to sample paths. The header states which, and nothing else. */
+  const LIVE = Boolean(SB_URL && SB_KEY);
+  const source = LIVE ? "live" : "demo";
   const [liveData, setLiveData] = useState({});     // symbol -> bars
   const [universe, setUniverse] = useState([]);      // liquidity_profile rows
   const [resolution, setResolution] = useState("weekly"); // daily | weekly | monthly
   const sbCfg = { url: SB_URL, key: SB_KEY };
   const [conn, setConn] = useState({ state: "idle", msg: "" });
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteSym, setPasteSym] = useState("CRDB");
-  const [pasteText, setPasteText] = useState("");
+  const [theme, toggleTheme] = useTheme();
+  const C = CHART[theme];
+  const [panelOpen, setPanelOpen] = useState(false);  // settings drawer, mobile only
+  const [narrow, setNarrow] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 640 : false
+  );
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < 640);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /* ---- config ---- */
   const [legA, setLegA] = useState({
@@ -855,7 +925,7 @@ export default function SokoviewReplay() {
 
   // Pull the tradeable universe once, then auto-load whatever the legs need.
   useEffect(() => {
-    if (source !== "live" || !SB_URL || !SB_KEY) return;
+    if (!LIVE) return;
     let cancelled = false;
     (async () => {
       try {
@@ -866,7 +936,7 @@ export default function SokoviewReplay() {
       }
     })();
     return () => { cancelled = true; };
-  }, [source]);
+  }, [LIVE]);
 
   /* ---- windowed bars, aligned across both legs ---- */
   const { barsA, barsB, n } = useMemo(() => {
@@ -947,12 +1017,12 @@ export default function SokoviewReplay() {
 
   /* ---- line colours: company brand colours when two stocks race ---- */
   const { colorA, colorB } = useMemo(() => {
-    if (!bOn || legA.symbol === legB.symbol) return { colorA: A_COLOR, colorB: B_COLOR };
+    if (!bOn || legA.symbol === legB.symbol) return { colorA: A_COLOR, colorB: C.plan };
     const ca = brandColor(legA.symbol);
     let cb = brandColor(legB.symbol);
-    if (cb === ca) cb = "#0a0a0a";
+    if (cb === ca) cb = C.plan;
     return { colorA: ca, colorB: cb };
-  }, [bOn, legA.symbol, legB.symbol]);
+  }, [bOn, legA.symbol, legB.symbol, C.plan]);
 
   const nameOf = (sym) => UNIVERSE[sym]?.name ?? sym;
 
@@ -1100,21 +1170,9 @@ export default function SokoviewReplay() {
 
   // Auto-load whenever a leg's symbol changes.
   useEffect(() => {
-    if (source !== "live") return;
+    if (!LIVE) return;
     loadSymbols(bOn ? [legA.symbol, legB.symbol] : [legA.symbol]);
-  }, [source, legA.symbol, legB.symbol, bOn, loadSymbols]);
-
-  const ingestPaste = () => {
-    try {
-      const bars = normalizeSeries(JSON.parse(pasteText));
-      if (!bars.length) throw new Error("No usable rows — check the field names.");
-      setLiveData((d) => ({ ...d, [pasteSym]: bars }));
-      setConn({ state: "ok", msg: `${bars.length} bars loaded for ${pasteSym}` });
-      setPasteText(""); setPasteOpen(false);
-    } catch (e) {
-      setConn({ state: "err", msg: e.message });
-    }
-  };
+  }, [LIVE, legA.symbol, legB.symbol, bOn, loadSymbols]);
 
   /* ---- the editorial headline, built from the current settings ---- */
   const phraseOf = (leg, c) =>
@@ -1127,7 +1185,7 @@ export default function SokoviewReplay() {
 
   const Amount = ({ children }) => <span className="text-green-500">{children}</span>;
   const Name = ({ children }) => <span className="headline-serif">{children}</span>;
-  const When = ({ children }) => <span className="text-gray-400">{children}</span>;
+  const When = ({ children }) => <span className="text-mute">{children}</span>;
 
   const headline = !bOn ? (
     <>You put <Amount>{phraseA}</Amount> into <Name>{nameOf(legA.symbol)}</Name> starting <When>{startMon}</When></>
@@ -1153,6 +1211,100 @@ export default function SokoviewReplay() {
     return rows.sort((u, v) => v.value - u.value);
   }, [mA, mB, bOn, legA, legB, colorA, colorB]);
 
+  /* ---- Claude insights ----
+     Keyed on the configuration, not the scrub position, so playing the replay
+     or dragging the timeline never triggers a call. One request per distinct
+     simulation, cached for the session. */
+  const insightKey = useMemo(() => {
+    if (!mA) return null;
+    const legKey = (leg, c) =>
+      `${leg.symbol}|${leg.strategy}|${c.lumpAmount}|${c.perPeriod}|${leg.freq}`;
+    return [
+      source, resolution, startYear, whole, reinvest, feePct,
+      legKey(legA, cfgA), bOn ? legKey(legB, cfgB) : "-",
+    ].join("~");
+  }, [mA, source, resolution, startYear, whole, reinvest, feePct, legA, legB, cfgA, cfgB, bOn]);
+
+  const insightCache = useRef(new Map());
+  const [insight, setInsight] = useState({ state: "idle", items: [], msg: "" });
+
+  const buildSummary = useCallback(() => {
+    if (!simA || !mA) return null;
+    const endIdx = simA.path.length - 1;
+    const fin = (sim) => metricsAt(sim, sim.path.length - 1);
+    const leg = (l, sim, c) => {
+      const m = fin(sim);
+      // Six evenly spaced checkpoints: enough shape for Claude to comment on,
+      // a fraction of the tokens a full series would cost.
+      const marks = [];
+      for (let k = 1; k <= 6; k++) {
+        const i = Math.round((endIdx * k) / 6);
+        marks.push({ on: sim.path[i].date.slice(0, 7), worth: Math.round(sim.path[i].value) });
+      }
+      return {
+        stock: `${nameOf(l.symbol)} (${l.symbol})`,
+        plan: l.strategy === "lump"
+          ? `one-time ${amt(c.lumpAmount)}`
+          : `${amt(c.perPeriod)} every ${l.freq.replace("ly", "")}`,
+        invested: Math.round(m.invested),
+        worthNow: Math.round(m.value),
+        totalReturnPct: +(m.roi * 100).toFixed(1),
+        annualisedPct: m.irr == null ? null : +(m.irr * 100).toFixed(1),
+        dividends: Math.round(m.divTotal),
+        sharesHeld: Math.round(m.shares),
+        cashNeverInvested: Math.round(m.cash),
+        worstDropPct: +(m.mdd * 100).toFixed(1),
+        checkpoints: marks,
+      };
+    };
+    return {
+      currency: "TZS",
+      dataIsSample: source === "demo",
+      period: { from: barsA[0].date, to: barsA[endIdx].date },
+      brokerageFeePct: feePct,
+      dividendsReinvested: reinvest,
+      wholeSharesOnly: whole,
+      planA: leg(legA, simA, cfgA),
+      planB: bOn && simB ? leg(legB, simB, cfgB) : null,
+    };
+  }, [simA, simB, mA, bOn, legA, legB, cfgA, cfgB, barsA, feePct, reinvest, whole, source]);
+
+  const fetchInsight = useCallback(async (key, { force = false } = {}) => {
+    if (!key) return;
+    if (!force && insightCache.current.has(key)) {
+      setInsight({ state: "ok", items: insightCache.current.get(key), msg: "" });
+      return;
+    }
+    const summary = buildSummary();
+    if (!summary) return;
+    setInsight({ state: "loading", items: [], msg: "" });
+    try {
+      const res = await fetch("/api/insight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(summary),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      const items = body.insights ?? [];
+      insightCache.current.set(key, items);
+      setInsight({ state: "ok", items, msg: "" });
+    } catch (e) {
+      setInsight({ state: "err", items: [], msg: e.message });
+    }
+  }, [buildSummary]);
+
+  // Debounced so dragging the fee slider is one call, not thirty.
+  useEffect(() => {
+    if (!insightKey) return;
+    if (insightCache.current.has(insightKey)) {
+      setInsight({ state: "ok", items: insightCache.current.get(insightKey), msg: "" });
+      return;
+    }
+    const id = setTimeout(() => fetchInsight(insightKey), 1100);
+    return () => clearTimeout(id);
+  }, [insightKey, fetchInsight]);
+
   const caption = source === "demo"
     ? "SAMPLE DATA · ILLUSTRATIVE ONLY"
     : chartMode === "value" ? "HISTORICAL PORTFOLIO VALUE · ADJUSTED PRICES"
@@ -1162,132 +1314,43 @@ export default function SokoviewReplay() {
   const noData = n === 0;
 
   return (
-    <div className="w-full min-h-screen bg-[#f8f8f6] text-neutral-950 antialiased">
+    <div className="w-full min-h-screen bg-page text-ink antialiased">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Instrument+Serif:ital@1&family=IBM+Plex+Mono:wght@500;600&display=swap');
-        .headline-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.06em; letter-spacing: 0; }
         * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
+        .headline-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.06em; letter-spacing: 0; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
-        .dots { background-image: radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 20px 20px; }
+        .frame-shadow { box-shadow: var(--sv-shadow); }
         input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; }
-        input[type=range]::-webkit-slider-runnable-track{ height:4px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; margin-top:-6px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.3); cursor:pointer; }
-        input[type=range]::-moz-range-track{ height:4px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; cursor:pointer; }
+        input[type=range]::-webkit-slider-runnable-track{ height:4px; background:var(--sv-line); border-radius:99px; }
+        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:18px; height:18px; margin-top:-7px; border-radius:50%; background:var(--sv-ink); border:3px solid var(--sv-surface); box-shadow:0 1px 4px rgba(0,0,0,.3); cursor:pointer; }
+        input[type=range]::-moz-range-track{ height:4px; background:var(--sv-line); border-radius:99px; }
+        input[type=range]::-moz-range-thumb{ width:18px; height:18px; border-radius:50%; background:var(--sv-ink); border:3px solid var(--sv-surface); cursor:pointer; }
+        select option { background: var(--sv-surface); color: var(--sv-ink); }
+        :focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
       `}</style>
 
-      {/* ---------- header ---------- */}
-      <header className="border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-wrap gap-3 sticky top-0 bg-white/95 backdrop-blur z-20">
+      {/* ---------- header: brand, connection status, theme ---------- */}
+      <header className="border-b border-line px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 sticky top-0 bg-surface/95 backdrop-blur z-20">
         <Logo />
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
-            <button
-              onClick={() => setSource("demo")}
-              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
-                source === "demo" ? "bg-neutral-950 text-white" : "text-gray-500"
-              }`}
-            >
-              <FlaskConical className="w-3 h-3" /> Sample data
-            </button>
-            <button
-              onClick={() => setSource("live")}
-              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
-                source === "live" ? "bg-green-500 text-white" : "text-gray-500"
-              }`}
-            >
-              <Plug className="w-3 h-3" /> Sokoview API
-            </button>
-          </div>
+          <StatusPill live={LIVE} conn={conn} />
+          <button
+            onClick={toggleTheme}
+            className="w-9 h-9 rounded-lg border border-line flex items-center justify-center text-soft hover:text-ink hover:border-ink"
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={theme === "dark" ? "Light theme" : "Dark theme"}
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
         </div>
       </header>
 
-      {/* ---------- live panel ---------- */}
-      {source === "live" && (
-        <div className="border-b border-gray-200 bg-gray-50 px-5 py-4">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex items-end justify-between gap-3 flex-wrap">
-              <div>
-                <Eyebrow>Data source</Eyebrow>
-                <div className="text-[12px] font-bold text-neutral-900">
-                  Sokoview price history · split &amp; bonus adjusted
-                </div>
-                <div className="text-[10.5px] text-gray-500 mt-0.5">
-                  {universe.length
-                    ? `${universe.length} instruments · ${universe[0]?.first ?? ""} to ${universe[0]?.last ?? ""}`
-                    : "Loading universe…"}
-                </div>
-              </div>
-              <div className="flex items-end gap-2">
-                <div>
-                  <Eyebrow>Resolution</Eyebrow>
-                  <Seg
-                    value={resolution}
-                    onChange={setResolution}
-                    options={[
-                      { v: "monthly", l: "Monthly" },
-                      { v: "weekly", l: "Weekly" },
-                      { v: "daily", l: "Daily" },
-                    ]}
-                  />
-                </div>
-                <button
-                  onClick={() => setPasteOpen((v) => !v)}
-                  className="border border-gray-300 bg-white text-[11px] font-bold px-3 py-2.5 rounded-lg hover:border-neutral-900"
-                >
-                  Paste JSON
-                </button>
-              </div>
-            </div>
-
-            {conn.state === "loading" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-gray-500">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading price history…
-              </div>
-            )}
-            {conn.state === "ok" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-green-700">
-                <Check className="w-3.5 h-3.5" /> {conn.msg}
-              </div>
-            )}
-            {conn.state === "err" && (
-              <div className="mt-2.5 flex items-start gap-1.5 text-[11px] font-semibold text-red-600">
-                <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
-                <span>
-                  {conn.msg}
-                  <span className="block text-gray-500 font-normal mt-0.5">
-                    Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy.
-                  </span>
-                </span>
-              </div>
-            )}
-
-            {pasteOpen && (
-              <div className="mt-3 border-t border-gray-200 pt-3">
-                <div className="flex gap-2 mb-2">
-                  <input
-                    value={pasteSym}
-                    onChange={(e) => setPasteSym(e.target.value.toUpperCase())}
-                    className="w-28 bg-white border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none"
-                    placeholder="SYMBOL"
-                  />
-                  <button
-                    onClick={ingestPaste}
-                    className="bg-green-500 text-white text-[11px] font-bold px-4 py-2 rounded-lg hover:bg-green-600"
-                  >
-                    Load into replay
-                  </button>
-                </div>
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  rows={4}
-                  placeholder='Paste the raw response, e.g. {"data":[{"date":"2024-01-02","close":540}, …]}'
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-[11px] font-mono outline-none focus:border-green-500"
-                />
-              </div>
-            )}
-          </div>
+      {conn.state === "err" && (
+        <div className="px-4 sm:px-5 py-2 bg-alertbg border-b border-alertln text-alerttx text-[11px] font-semibold flex items-start gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+          <span>Couldn't reach price history — {conn.msg}</span>
         </div>
       )}
 
@@ -1295,7 +1358,7 @@ export default function SokoviewReplay() {
         {noData ? (
           <section className="py-20 text-center">
             <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
-            <div className="text-[12px] text-gray-500">
+            <div className="text-[12px] text-soft">
               Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
             </div>
           </section>
@@ -1307,7 +1370,7 @@ export default function SokoviewReplay() {
                 className="absolute -top-10 left-1/2 -translate-x-1/2 w-[520px] h-[320px] rounded-full pointer-events-none"
                 style={{ background: "radial-gradient(circle, rgba(34,197,94,.10) 0%, transparent 68%)" }}
               />
-              <h1 className="relative max-w-3xl mx-auto text-[27px] sm:text-[40px] font-extrabold leading-[1.08] tracking-[-0.03em] text-neutral-950">
+              <h1 className="relative max-w-3xl mx-auto text-[27px] sm:text-[40px] font-extrabold leading-[1.08] tracking-[-0.03em] text-ink">
                 {headline}
               </h1>
               <div className="relative flex items-center justify-center gap-8 mt-6 flex-wrap">
@@ -1318,7 +1381,7 @@ export default function SokoviewReplay() {
                     </span>
                     <div className="text-left">
                       <div className="text-[13px] font-extrabold leading-tight">{nameOf(c.symbol)}</div>
-                      <div className="text-[9px] font-bold tracking-[0.2em] text-gray-400" style={{ fontFamily: MONO }}>
+                      <div className="text-[9px] font-bold tracking-[0.2em] text-mute" style={{ fontFamily: MONO }}>
                         {c.symbol}
                       </div>
                     </div>
@@ -1327,9 +1390,25 @@ export default function SokoviewReplay() {
               </div>
             </section>
 
-            <div className="grid lg:grid-cols-[300px_1fr] gap-5">
+            {/* On phones the chart comes first and settings collapse into a
+                drawer, so the thing people came to see isn't below a wall of
+                inputs. On lg the rail returns to the left column. */}
+            <button
+              onClick={() => setPanelOpen((v) => !v)}
+              className="lg:hidden w-full mb-3 flex items-center justify-between gap-2 border border-line bg-surface rounded-xl px-4 py-3"
+              aria-expanded={panelOpen}
+            >
+              <span className="flex items-center gap-2 text-[12.5px] font-extrabold">
+                <SlidersHorizontal className="w-4 h-4 text-soft" /> Settings
+              </span>
+              <span className="text-[10.5px] font-bold text-soft truncate max-w-[55%] text-right">
+                {legA.symbol}{bOn && legB.symbol !== legA.symbol ? ` vs ${legB.symbol}` : ""} · from {startYear}
+              </span>
+            </button>
+
+            <div className="flex flex-col lg:grid lg:grid-cols-[300px_1fr] gap-5">
               {/* ---------- left rail ---------- */}
-              <aside className="space-y-4">
+              <aside className={`space-y-4 order-2 lg:order-1 ${panelOpen ? "" : "hidden lg:block"}`}>
                 <div>
                   <Eyebrow>Start from</Eyebrow>
                   <div className="flex flex-wrap gap-1.5">
@@ -1339,8 +1418,8 @@ export default function SokoviewReplay() {
                         onClick={() => setStartYear(y)}
                         className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
                           startYear === y
-                            ? "bg-neutral-950 text-white border-neutral-950"
-                            : "border-gray-300 text-gray-500 hover:border-neutral-900 bg-white"
+                            ? "bg-ink text-page border-neutral-950"
+                            : "border-line text-soft hover:border-ink bg-surface"
                         }`}
                       >
                         {y}
@@ -1348,6 +1427,21 @@ export default function SokoviewReplay() {
                     ))}
                   </div>
                 </div>
+
+                {LIVE && (
+                  <div>
+                    <Eyebrow>Resolution</Eyebrow>
+                    <Seg
+                      value={resolution}
+                      onChange={setResolution}
+                      options={[
+                        { v: "monthly", l: "Monthly" },
+                        { v: "weekly", l: "Weekly" },
+                        { v: "daily", l: "Daily" },
+                      ]}
+                    />
+                  </div>
+                )}
 
                 <div>
                   <Eyebrow>Quick comparisons</Eyebrow>
@@ -1361,7 +1455,7 @@ export default function SokoviewReplay() {
                       <button
                         key={pr.k}
                         onClick={() => applyPreset(pr.k)}
-                        className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-gray-300 bg-white hover:border-green-500 hover:bg-green-500/5 leading-tight"
+                        className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-line bg-surface hover:border-green-500 hover:bg-green-500/5 leading-tight"
                       >
                         {pr.l}
                       </button>
@@ -1384,7 +1478,7 @@ export default function SokoviewReplay() {
                 <LegPanel
                   leg={legB}
                   set={(pr) => setLegB((st) => ({ ...st, ...pr }))}
-                  color={bOn ? colorB : B_COLOR}
+                  color={bOn ? colorB : C.plan}
                   title="Plan B"
                   enabled={bOn}
                   onToggle={() => setBOn((v) => !v)}
@@ -1395,7 +1489,7 @@ export default function SokoviewReplay() {
                   liq={liqOf[legB.symbol]}
                 />
 
-                <div className="rounded-xl border border-gray-300 bg-white p-3.5 space-y-3">
+                <div className="rounded-xl border border-line bg-surface p-3.5 space-y-3">
                   <Eyebrow>Assumptions</Eyebrow>
                   {bOn &&
                     ((legA.strategy === "lump" && legB.strategy === "dca") ||
@@ -1438,15 +1532,15 @@ export default function SokoviewReplay() {
               </aside>
 
               {/* ---------- right: the frame, transport, leaderboard, details ---------- */}
-              <section className="space-y-4">
+              <section className="space-y-4 order-1 lg:order-2 min-w-0">
                 {/* the shareable frame */}
-                <div className="bg-white border border-gray-200 rounded-3xl px-4 sm:px-6 pt-5 pb-2 shadow-[0_10px_44px_rgba(0,0,0,0.06)]">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="bg-surface border border-line rounded-3xl px-3 sm:px-6 pt-4 sm:pt-5 pb-2 frame-shadow">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
                     <div>
-                      <div className="text-[38px] sm:text-[52px] font-extrabold tracking-[-0.035em] leading-none tabular-nums text-neutral-800">
+                      <div className="text-[30px] sm:text-[52px] font-extrabold tracking-[-0.035em] leading-none tabular-nums text-ink">
                         {barsA[t] ? monYr(barsA[t].date) : ""}
                       </div>
-                      <div className="text-[10.5px] text-gray-400 font-semibold mt-1.5 tabular-nums">
+                      <div className="text-[10.5px] text-mute font-semibold mt-1.5 tabular-nums">
                         {legA.symbol} at {tzs(mA?.price)}
                         {mB && legB.symbol !== legA.symbol && <> · {legB.symbol} at {tzs(mB.price)}</>}
                       </div>
@@ -1462,34 +1556,37 @@ export default function SokoviewReplay() {
                     />
                   </div>
 
-                  <div style={{ width: "100%", height: 380 }}>
+                  <div style={{ width: "100%", height: narrow ? 300 : 380 }}>
                     <ResponsiveContainer>
-                      <ComposedChart data={chartData} margin={{ top: 30, right: 34, bottom: 4, left: 0 }}>
-                        <CartesianGrid stroke="#eceff1" vertical={false} />
+                      <ComposedChart data={chartData} margin={{ top: 30, right: narrow ? 22 : 34, bottom: 4, left: 0 }}>
+                        <CartesianGrid stroke={C.grid} vertical={false} />
                         <XAxis
                           dataKey="date"
                           ticks={xTicks}
                           interval={0}
-                          tick={{ fontSize: 12, fill: "#374151", fontWeight: 600, fontFamily: MONO }}
-                          tickFormatter={monYr}
+                          tick={{ fontSize: narrow ? 10 : 12, fill: C.tick, fontWeight: 600, fontFamily: MONO }}
+                          tickFormatter={narrow ? (d) => monYr(d).replace(" 20", " '") : monYr}
                           tickMargin={10}
-                          axisLine={{ stroke: "#0a0a0a", strokeWidth: 2 }}
+                          axisLine={{ stroke: C.axis, strokeWidth: C.axisW }}
                           tickLine={false}
                         />
                         <YAxis
                           domain={yDomain}
                           ticks={yTicks}
-                          tick={{ fontSize: 12, fill: "#374151", fontWeight: 600, fontFamily: MONO }}
+                          tick={{ fontSize: narrow ? 10 : 12, fill: C.tick, fontWeight: 600, fontFamily: MONO }}
                           tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : axisCompact(v))}
-                          axisLine={{ stroke: "#0a0a0a", strokeWidth: 2 }}
+                          axisLine={{ stroke: C.axis, strokeWidth: C.axisW }}
                           tickLine={false}
-                          width={50}
+                          width={narrow ? 42 : 50}
                         />
                         <Tooltip
                           contentStyle={{
-                            borderRadius: 12, border: "1px solid #e5e7eb",
-                            fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
+                            borderRadius: 12, border: "1px solid var(--sv-line)",
+                            background: "var(--sv-surface)", color: "var(--sv-ink)",
+                            fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.16)",
                           }}
+                          itemStyle={{ color: "var(--sv-ink)" }}
+                          labelStyle={{ color: "var(--sv-soft)" }}
                           labelFormatter={prettyDate}
                           formatter={(v, name) => [
                             chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
@@ -1500,13 +1597,13 @@ export default function SokoviewReplay() {
                             }[name] ?? name,
                           ]}
                         />
-                        {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                        {chartMode === "roi" && <ReferenceLine y={0} stroke={C.zero} />}
                         {chartMode === "value" && (
-                          <Line type="stepAfter" dataKey="aInv" stroke="#d4d4d4" strokeWidth={1.5}
+                          <Line type="stepAfter" dataKey="aInv" stroke={C.dash} strokeWidth={1.5}
                                 strokeDasharray="4 3" dot={false} isAnimationActive={false} />
                         )}
                         {chartMode === "value" && bOn && (
-                          <Line type="stepAfter" dataKey="bInv" stroke="#d4d4d4" strokeWidth={1.5}
+                          <Line type="stepAfter" dataKey="bInv" stroke={C.dash} strokeWidth={1.5}
                                 strokeDasharray="4 3" dot={false} isAnimationActive={false} />
                         )}
                         <Line type="monotone" dataKey="aVal" stroke={colorA} strokeWidth={2.6}
@@ -1515,25 +1612,25 @@ export default function SokoviewReplay() {
                           <Line type="monotone" dataKey="bVal" stroke={colorB} strokeWidth={2.6}
                                 dot={false} activeDot={false} isAnimationActive={false} />
                         )}
-                        <Customized component={(cp) => <ChartCallouts {...cp} legs={calloutLegs} />} />
+                        <Customized component={(cp) => <ChartCallouts {...cp} legs={calloutLegs} C={C} />} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="relative flex items-center justify-center py-2.5 mt-1 border-t border-gray-100">
+                  <div className="relative flex items-center justify-center py-2.5 mt-1 border-t border-hair">
                     <span
-                      className="text-[9px] text-gray-400 font-semibold"
+                      className="text-[9px] text-mute font-semibold"
                       style={{ fontFamily: MONO, letterSpacing: "0.14em" }}
                     >
                       {caption}
                     </span>
                     <span className="absolute right-0 hidden min-[480px]:flex items-center gap-1.5 opacity-70">
-                      <span className="w-4 h-4 bg-neutral-950 rounded-[4px] flex items-end gap-[1.5px] px-[3px] pb-[3px]">
+                      <span className="w-4 h-4 bg-neutral-950 dark:bg-raised rounded-[4px] flex items-end gap-[1.5px] px-[3px] pb-[3px]">
                         <span className="w-[2px] h-[3px] rounded-[1px] bg-green-500" />
                         <span className="w-[2px] h-[5px] rounded-[1px] bg-green-500" />
                         <span className="w-[2px] h-[7px] rounded-[1px] bg-green-500" />
                       </span>
-                      <span className="text-[10.5px] font-extrabold tracking-tight text-neutral-800">sokoview</span>
+                      <span className="text-[10.5px] font-extrabold tracking-tight text-ink">sokoview</span>
                     </span>
                   </div>
                 </div>
@@ -1542,7 +1639,7 @@ export default function SokoviewReplay() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     onClick={() => (playing ? setPlaying(false) : play())}
-                    className="w-11 h-11 rounded-full bg-neutral-950 text-white flex items-center justify-center hover:bg-neutral-800 flex-shrink-0"
+                    className="w-11 h-11 rounded-full bg-ink text-page flex items-center justify-center hover:opacity-80 flex-shrink-0"
                     aria-label={playing ? "Pause replay" : "Play replay"}
                   >
                     {playing ? (
@@ -1553,7 +1650,7 @@ export default function SokoviewReplay() {
                   </button>
                   <button
                     onClick={restart}
-                    className="w-9 h-9 rounded-full border border-gray-300 bg-white flex items-center justify-center hover:border-neutral-900 flex-shrink-0"
+                    className="w-9 h-9 rounded-full border border-line bg-surface flex items-center justify-center hover:border-ink flex-shrink-0"
                     aria-label="Restart replay"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1569,13 +1666,13 @@ export default function SokoviewReplay() {
                     aria-label="Scrub through history"
                   />
 
-                  <div className="flex gap-1 p-1 bg-gray-100 rounded-lg flex-shrink-0">
+                  <div className="flex gap-1 p-1 bg-raised rounded-lg flex-shrink-0">
                     {[0.5, 1, 2, 4].map((sp) => (
                       <button
                         key={sp}
                         onClick={() => setSpeed(sp)}
                         className={`text-[10.5px] font-bold py-1 px-2 rounded ${
-                          speed === sp ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"
+                          speed === sp ? "bg-surface shadow-sm text-ink" : "text-soft"
                         }`}
                       >
                         {sp}×
@@ -1591,11 +1688,11 @@ export default function SokoviewReplay() {
                       key={r.key}
                       className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
                         i === 0 && board.length > 1
-                          ? "bg-yellow-50 border-yellow-300"
-                          : "bg-white border-gray-200"
+                          ? "bg-win border-winline"
+                          : "bg-surface border-line"
                       }`}
                     >
-                      <span className="text-[12px] font-bold text-gray-300 w-4 flex-shrink-0" style={{ fontFamily: MONO }}>
+                      <span className="text-[12px] font-bold text-mute w-4 flex-shrink-0" style={{ fontFamily: MONO }}>
                         {i + 1}
                       </span>
                       <span className="rounded-full bg-white p-[2px] flex-shrink-0" style={{ boxShadow: `0 0 0 2px ${r.color}` }}>
@@ -1603,18 +1700,67 @@ export default function SokoviewReplay() {
                       </span>
                       <div className="min-w-0">
                         <div className="text-[13px] font-extrabold truncate leading-tight">{r.name}</div>
-                        <div className="text-[9px] font-bold tracking-[0.1em] text-gray-400 uppercase whitespace-nowrap" style={{ fontFamily: MONO }}>
+                        <div className="text-[9px] font-bold tracking-[0.1em] text-mute uppercase whitespace-nowrap" style={{ fontFamily: MONO }}>
                           {r.plan}
                         </div>
                       </div>
                       <div className="ml-auto text-right flex-shrink-0">
                         <div className="text-[15px] font-extrabold tabular-nums leading-tight">{tzs(r.value)}</div>
-                        <div className={`text-[10.5px] font-bold tabular-nums ${r.roi >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        <div className={`text-[10.5px] font-bold tabular-nums ${r.roi >= 0 ? "text-pos" : "text-neg"}`}>
                           {pct(r.roi)}
                         </div>
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* what Claude noticed */}
+                <div className="border border-line bg-surface rounded-2xl p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <span className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-soft">
+                      <Sparkles className="w-3.5 h-3.5 text-pos" /> What stands out
+                    </span>
+                    <button
+                      onClick={() => fetchInsight(insightKey, { force: true })}
+                      disabled={insight.state === "loading"}
+                      className="flex items-center gap-1.5 text-[10.5px] font-bold text-soft hover:text-ink disabled:opacity-40"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${insight.state === "loading" ? "animate-spin" : ""}`} />
+                      Refresh
+                    </button>
+                  </div>
+
+                  {insight.state === "loading" && (
+                    <div className="space-y-2" aria-live="polite">
+                      {[0, 1].map((i) => (
+                        <div key={i} className="h-3 rounded bg-raised animate-pulse" style={{ width: i ? "72%" : "92%" }} />
+                      ))}
+                    </div>
+                  )}
+
+                  {insight.state === "ok" && insight.items.length > 0 && (
+                    <div className="space-y-3">
+                      {insight.items.map((it, i) => (
+                        <div key={i}>
+                          <div className="text-[12px] font-extrabold text-ink leading-tight">{it.title}</div>
+                          <div className="text-[11.5px] text-soft leading-relaxed mt-0.5">{it.body}</div>
+                        </div>
+                      ))}
+                      <div className="text-[9.5px] text-mute pt-1">
+                        Written by Claude from the figures above. Not investment advice.
+                      </div>
+                    </div>
+                  )}
+
+                  {insight.state === "err" && (
+                    <div className="text-[11px] text-soft leading-snug">
+                      Insights are unavailable right now. {insight.msg}
+                    </div>
+                  )}
+
+                  {insight.state === "idle" && (
+                    <div className="text-[11px] text-soft">Reading the results…</div>
+                  )}
                 </div>
 
                 {/* result cards */}
@@ -1625,7 +1771,7 @@ export default function SokoviewReplay() {
                   ]
                     .filter((x) => x.show && x.m)
                     .map(({ m, leg, color, title }) => (
-                      <div key={title} className="border border-gray-200 bg-white rounded-2xl overflow-hidden">
+                      <div key={title} className="border border-line bg-surface rounded-2xl overflow-hidden">
                         <div
                           className="px-4 py-2.5 flex items-center justify-between"
                           style={{ background: color }}
@@ -1665,7 +1811,7 @@ export default function SokoviewReplay() {
                             <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
                           </div>
                           {m.cash > 1 && (
-                            <div className="mt-3 pt-3 border-t border-gray-100 text-[10.5px] text-gray-400 font-semibold tabular-nums">
+                            <div className="mt-3 pt-3 border-t border-hair text-[10.5px] text-mute font-semibold tabular-nums">
                               {tzs(m.cash)} still uninvested
                             </div>
                           )}
@@ -1675,12 +1821,12 @@ export default function SokoviewReplay() {
                 </div>
 
                 {/* method note */}
-                <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 bg-white rounded-xl p-3.5">
-                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+                <div className="flex gap-2.5 text-[11px] text-soft leading-relaxed border border-line bg-surface rounded-xl p-3.5">
+                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-mute" />
                   <p>
                     Comparing a one-time investment against a recurring one on total return alone is
                     misleading — the recurring plan has less money in the market for less time.
-                    The <strong className="text-neutral-900">annualised money-weighted return</strong> above
+                    The <strong className="text-ink">annualised money-weighted return</strong> above
                     accounts for when each contribution actually landed, so it's the fairer number
                     to judge them by. Past results don't predict future ones.
                   </p>
