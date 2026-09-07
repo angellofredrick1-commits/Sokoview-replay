@@ -82,6 +82,10 @@
 }
 
 html, body, #root { height: 100%; margin: 0; }
+/* Belt and braces: nothing may widen the layout viewport, or fixed-position
+   overlays (the mobile settings sheet) mis-size and swallow taps. `clip`
+   rather than `hidden` so position: sticky keeps working. */
+html, body { overflow-x: clip; }
 body {
   font-family: "Sora", ui-sans-serif, system-ui, sans-serif;
   background: var(--sv-page);

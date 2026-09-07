@@ -155,8 +155,15 @@ first visits follow the OS preference. Recharts can't read CSS variables, so the
 chart's own colours are mirrored in the `CHART` object in `SokoviewReplay.jsx`.
 
 **Mobile.** Below `lg` the chart frame comes first and the controls collapse
-into a **Settings** drawer that shows the current stocks and start year on its
-face. The chart shrinks to 300px, axis labels shorten (`Jan '18`), callouts drop
+into a **Settings** bottom sheet that shows the current stocks and start year on
+its trigger. The sheet is `position: fixed`, so it opens under the thumb rather
+than in document order — an in-flow panel rendered ~1,700px down the page, below
+the chart and leaderboard, which made the button look dead. It closes on Done,
+backdrop tap or Escape, and locks background scroll while open.
+
+Note `overflow-x: clip` on `html, body` in `index.css` and the clamped width on
+the headline glow: any element wider than the screen inflates the mobile layout
+viewport, which mis-sizes fixed overlays and makes taps land in the wrong place. The chart shrinks to 300px, axis labels shorten (`Jan '18`), callouts drop
 to logo + value pill, and the watermark hides so it can't collide with the
 caption.
 

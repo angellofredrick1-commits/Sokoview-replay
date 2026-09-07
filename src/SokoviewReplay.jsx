@@ -877,7 +877,22 @@ export default function SokoviewReplay() {
     typeof window !== "undefined" ? window.innerWidth < 640 : false
   );
   useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth < 640);
+    if (!panelOpen) return;
+    const onKey = (e) => e.key === "Escape" && setPanelOpen(false);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [panelOpen]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setNarrow(window.innerWidth < 640);
+      if (window.innerWidth >= 1024) setPanelOpen(false);
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -1365,9 +1380,9 @@ export default function SokoviewReplay() {
         ) : (
           <>
             {/* ---------- editorial headline ---------- */}
-            <section className="relative text-center pt-9 pb-7">
+            <section className="relative text-center pt-9 pb-7 overflow-hidden">
               <div
-                className="absolute -top-10 left-1/2 -translate-x-1/2 w-[520px] h-[320px] rounded-full pointer-events-none"
+                className="absolute -top-10 left-1/2 -translate-x-1/2 w-[min(520px,100%)] h-[320px] rounded-full pointer-events-none"
                 style={{ background: "radial-gradient(circle, rgba(34,197,94,.10) 0%, transparent 68%)" }}
               />
               <h1 className="relative max-w-3xl mx-auto text-[27px] sm:text-[40px] font-extrabold leading-[1.08] tracking-[-0.03em] text-ink">
@@ -1394,9 +1409,10 @@ export default function SokoviewReplay() {
                 drawer, so the thing people came to see isn't below a wall of
                 inputs. On lg the rail returns to the left column. */}
             <button
-              onClick={() => setPanelOpen((v) => !v)}
-              className="lg:hidden w-full mb-3 flex items-center justify-between gap-2 border border-line bg-surface rounded-xl px-4 py-3"
+              onClick={() => setPanelOpen(true)}
+              className="lg:hidden w-full mb-3 flex items-center justify-between gap-2 border border-line bg-surface rounded-xl px-4 py-3 active:bg-raised"
               aria-expanded={panelOpen}
+              aria-controls="sv-settings"
             >
               <span className="flex items-center gap-2 text-[12.5px] font-extrabold">
                 <SlidersHorizontal className="w-4 h-4 text-soft" /> Settings
@@ -1406,9 +1422,44 @@ export default function SokoviewReplay() {
               </span>
             </button>
 
+            {panelOpen && (
+              <div
+                className="lg:hidden fixed inset-0 bg-black/45 z-40"
+                onClick={() => setPanelOpen(false)}
+                aria-hidden="true"
+              />
+            )}
+
             <div className="flex flex-col lg:grid lg:grid-cols-[300px_1fr] gap-5">
               {/* ---------- left rail ---------- */}
-              <aside className={`space-y-4 order-2 lg:order-1 ${panelOpen ? "" : "hidden lg:block"}`}>
+              {/* On phones this is a bottom sheet: it has to appear where the
+                  thumb already is, not 1,700px further down the page. Above lg
+                  it is just the left column again. */}
+              <aside
+                id="sv-settings"
+                className={
+                  "order-2 lg:order-1 lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-none " +
+                  "lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:space-y-4 lg:block " +
+                  (panelOpen
+                    ? "fixed inset-x-0 bottom-0 z-50 max-h-[82vh] overflow-y-auto overscroll-contain " +
+                      "rounded-t-2xl border-t border-line bg-page px-4 pb-8 shadow-[0_-12px_40px_rgba(0,0,0,.28)] space-y-4"
+                    : "hidden lg:block")
+                }
+              >
+                {/* sheet chrome, mobile only */}
+                <div className="lg:hidden sticky top-0 -mx-4 px-4 pt-2.5 pb-3 bg-page border-b border-hair z-10">
+                  <div className="w-9 h-1 rounded-full bg-line mx-auto mb-3" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-extrabold">Settings</span>
+                    <button
+                      onClick={() => setPanelOpen(false)}
+                      className="text-[11.5px] font-extrabold text-page bg-ink rounded-lg px-3.5 py-2"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+
                 <div>
                   <Eyebrow>Start from</Eyebrow>
                   <div className="flex flex-wrap gap-1.5">
