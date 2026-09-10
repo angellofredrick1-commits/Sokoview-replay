@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ReferenceLine, Customized,
+  CartesianGrid, ReferenceLine,
 } from "recharts";
 import {
-  Play, Pause, RotateCcw, ChevronDown, AlertTriangle, Loader2, Info,
-  Sun, Moon, Sparkles, SlidersHorizontal, RefreshCw,
+  Play, Pause, RotateCcw, Plug, FlaskConical, ChevronDown, AlertTriangle,
+  Check, Loader2, Info,
 } from "lucide-react";
-import { logoUrl, monogramColor, monogramText, brandColor } from "./logos.js";
+import { logoUrl, monogramColor, monogramText } from "./logos.js";
 
 /* ============================================================================
    1. DATA ADAPTER  —  the only part you rewrite for the real Sokoview API
@@ -328,72 +328,8 @@ const prettyDate = (d) =>
     day: "numeric", month: "short", year: "numeric",
   });
 
-const monYr = (d) =>
-  new Date(d + "T00:00:00").toLocaleDateString("en-GB", { month: "short", year: "numeric" });
-
-/** TZS amount for the headline: full digits under a million, compact above. */
-const amt = (n) => "TZS " + (n >= 1e6 ? axisCompact(n) : nf.format(Math.round(n)));
-
-const FREQ_WORD = { weekly: "/week", monthly: "/month", quarterly: "/quarter", yearly: "/year" };
-
-/** Round up to a friendly axis ceiling: 1 / 1.2 / 1.5 / 2 / 2.5 / 3 / 4 / 5 / 6 / 8 × 10^k. */
-function niceCeil(x) {
-  if (!isFinite(x) || x <= 0) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(x)));
-  const m = x / p;
-  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((v) => v >= m);
-  return step * p;
-}
-
-const MONO = "'IBM Plex Mono', ui-monospace, monospace";
-
-/** Terse axis labels: 120M, 1.5B, 82K — no trailing zeros. */
-const axisCompact = (n) => {
-  if (n == null || !isFinite(n)) return "";
-  const a = Math.abs(n);
-  const trim = (x) => String(parseFloat(x.toFixed(2)));
-  if (a >= 1e9) return trim(n / 1e9) + "B";
-  if (a >= 1e6) return trim(n / 1e6) + "M";
-  if (a >= 1e3) return trim(n / 1e3) + "K";
-  return trim(n);
-};
 const A_COLOR = "#22c55e";
 const B_COLOR = "#0a0a0a";
-
-/* ============================================================================
-   3b. THEME
-   ==========================================================================*/
-
-const THEME_KEY = "sokoview-replay-theme";
-
-/** Resolved once before first paint by the inline script in index.html. */
-function readTheme() {
-  if (typeof document === "undefined") return "light";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
-
-function useTheme() {
-  const [theme, setTheme] = useState(readTheme);
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    try { localStorage.setItem(THEME_KEY, theme); } catch {}
-  }, [theme]);
-  return [theme, () => setTheme((v) => (v === "dark" ? "light" : "dark"))];
-}
-
-/**
- * Recharts takes concrete colours, not CSS variables, so the chart internals
- * are mirrored here rather than themed in CSS.
- */
-const CHART = {
-  light: { grid: "#eceff1", axis: "#0a0a0a", axisW: 2, tick: "#374151", dash: "#d4d4d4",
-           halo: "#ffffff", pill: "#fde047", pillInk: "#0a0a0a", plan: "#0a0a0a",
-           pos: "#16a34a", neg: "#dc2626", zero: "#d1d5db" },
-  dark:  { grid: "#262d2f", axis: "#8b9499", axisW: 1.5, tick: "#9aa3aa", dash: "#3a4245",
-           halo: "#15191a", pill: "#facc15", pillInk: "#0a0a0a", plan: "#e8eaea",
-           pos: "#4ade80", neg: "#f87171", zero: "#3a4245" },
-};
 
 /* ============================================================================
    4. UI ATOMS
@@ -435,196 +371,69 @@ function StockMark({ symbol, size = 20, ring = false }) {
 }
 
 /**
- * The bucko-style end-of-line callout layer, drawn as a Recharts <Customized>
- * overlay so it knows where BOTH lines end and can keep the two callouts from
- * colliding. Each callout: circled company logo riding the line end, a rank
- * badge, a crown on the leader, the company name, the value in a highlighter
- * pill, and the return underneath.
+ * The travelling marker on the chart. Recharts hands us the pixel position of
+ * each point; we only draw on the final one, so it rides the end of the line as
+ * the replay advances.
+ *
+ * SVG <image> cannot fail over to a monogram the way <img> can, so unmapped
+ * symbols get the monogram drawn directly.
  */
-function LogoDot({ cx, cy, R, color, symbol, rank, C }) {
+function makeLeadMarker(symbol, color, lastIndex, size = 30) {
   const url = logoUrl(symbol);
-  const clip = `co-${symbol.replace(/[^A-Za-z0-9]/g, "")}-${Math.round(cx)}-${Math.round(cy)}`;
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={R + 2.5} fill={C.halo} />
-      <circle cx={cx} cy={cy} r={R + 2.5} fill="none" stroke={color} strokeWidth={2.5} />
-      {url ? (
-        <>
-          <clipPath id={clip}>
-            <circle cx={cx} cy={cy} r={R} />
-          </clipPath>
-          <image
-            href={url} x={cx - R} y={cy - R} width={R * 2} height={R * 2}
-            clipPath={`url(#${clip})`} preserveAspectRatio="xMidYMid meet"
-          />
-        </>
-      ) : (
-        <>
-          <circle cx={cx} cy={cy} r={R} fill={monogramColor(symbol)} />
-          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-                fontSize={R * 0.66} fontWeight="800" fill="#fff">
-            {monogramText(symbol)}
-          </text>
-        </>
-      )}
-      {rank != null && (
-        <>
-          <circle cx={cx + R * 0.8} cy={cy + R * 0.8} r={9} fill={color} stroke={C.halo} strokeWidth={2} />
-          <text x={cx + R * 0.8} y={cy + R * 0.8 + 0.5} textAnchor="middle" dominantBaseline="central"
-                fontSize="10" fontWeight="800" fill="#fff">
-            {rank}
-          </text>
-        </>
-      )}
-    </g>
-  );
-}
-
-function Callout({ leg, R, narrow, svgW, C }) {
-  const { cx, ty, color, symbol, name, rank, crown, pill, sub, subUp } = leg;
-  const pillFs = narrow ? 11 : 13.5;
-  const pillW = Math.round(pill.length * pillFs * 0.66) + 20;
-  const pillH = narrow ? 21 : 26;
-
-  if (narrow) {
-    const px = Math.min(Math.max(cx - pillW / 2, 4), svgW - pillW - 4);
+  const id = `clip-${symbol.replace(/[^A-Za-z0-9]/g, "")}`;
+  return (props) => {
+    const { cx, cy, index } = props;
+    if (index !== lastIndex || cx == null || cy == null) return null;
+    const r = size / 2;
     return (
-      <g>
-        {crown && (
-          <text x={cx} y={ty - R - 9} textAnchor="middle" fontSize="15">👑</text>
+      <g style={{ pointerEvents: "none" }}>
+        <circle cx={cx} cy={cy} r={r + 2.5} fill="#fff" />
+        <circle cx={cx} cy={cy} r={r + 2.5} fill="none" stroke={color} strokeWidth={2} />
+        {url ? (
+          <>
+            <clipPath id={id}>
+              <circle cx={cx} cy={cy} r={r} />
+            </clipPath>
+            <image
+              href={url} x={cx - r} y={cy - r} width={size} height={size}
+              clipPath={`url(#${id})`} preserveAspectRatio="xMidYMid meet"
+            />
+          </>
+        ) : (
+          <>
+            <circle cx={cx} cy={cy} r={r} fill={monogramColor(symbol)} />
+            <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+              fontSize={size * 0.34} fontWeight="800" fill="#fff">
+              {monogramText(symbol)}
+            </text>
+          </>
         )}
-        <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} C={C} />
-        <rect x={px} y={ty + R + 7} width={pillW} height={pillH} rx={6} fill={C.pill} />
-        <text x={px + pillW / 2} y={ty + R + 7 + pillH / 2 + 0.5} textAnchor="middle"
-              dominantBaseline="central" fontSize={pillFs} fontWeight="800" fill={C.pillInk}
-              style={{ fontVariantNumeric: "tabular-nums" }}>
-          {pill}
-        </text>
       </g>
     );
-  }
-
-  const blockW = Math.max(pillW, (name.length + symbol.length) * 7.6 + 18);
-  let tx = cx + R + 13;
-  if (tx + blockW > svgW - 6) {
-    const leftTx = cx - R - 13 - blockW;
-    tx = leftTx >= 8 ? leftTx : Math.max(8, svgW - 6 - blockW);
-  }
-  return (
-    <g>
-      <text x={tx} y={ty - 17}>
-        <tspan fontSize="13" fontWeight="800" fill={color}>{name}</tspan>
-        <tspan dx="7" fontSize="9.5" fontWeight="700" fill={C.tick} letterSpacing="1.5">{symbol}</tspan>
-      </text>
-      <rect x={tx} y={ty - 10} width={pillW} height={pillH} rx={7} fill={C.pill} />
-      <text x={tx + 10} y={ty - 10 + pillH / 2 + 0.5} dominantBaseline="central"
-            fontSize={pillFs} fontWeight="800" fill={C.pillInk}
-            style={{ fontVariantNumeric: "tabular-nums" }}>
-        {pill}
-      </text>
-      {sub && (
-        <text x={tx + 1} y={ty + pillH + 6} fontSize="11" fontWeight="800"
-              fill={subUp ? C.pos : C.neg}
-              style={{ fontVariantNumeric: "tabular-nums" }}>
-          {sub}
-        </text>
-      )}
-      <LogoDot cx={cx} cy={ty} R={R} color={color} symbol={symbol} rank={rank} C={C} />
-      {crown && (
-        <text x={cx} y={ty - R - 10} textAnchor="middle" fontSize="17">👑</text>
-      )}
-    </g>
-  );
-}
-
-function ChartCallouts(props) {
-  const { formattedGraphicalItems, offset, width, legs, C } = props;
-  if (!legs?.length || !formattedGraphicalItems || !offset) return null;
-  const narrow = (offset.width ?? 0) < 480;
-  const R = narrow ? 15 : 21;
-
-  const resolved = [];
-  for (const leg of legs) {
-    const gi = formattedGraphicalItems.find(
-      (g) => (g?.item?.props?.dataKey ?? g?.props?.dataKey) === leg.dataKey
-    );
-    const pts = gi?.props?.points || gi?.item?.props?.points || [];
-    let last = null;
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const pt = pts[i];
-      if (pt && pt.y != null && isFinite(pt.y) && pt.payload?.[leg.dataKey] != null) { last = pt; break; }
-    }
-    if (last) resolved.push({ ...leg, cx: last.x, ty: last.y });
-  }
-  if (!resolved.length) return null;
-
-  const minY = offset.top + R + (resolved.some((l) => l.crown) ? 24 : 6);
-  const maxY = offset.top + offset.height - R - (narrow ? 34 : 6);
-  resolved.forEach((l) => { l.ty = Math.max(minY, Math.min(maxY, l.ty)); });
-  if (resolved.length === 2) {
-    const gap = narrow ? 72 : 82;
-    const [a, b] = [...resolved].sort((u, v) => u.ty - v.ty);
-    if (b.ty - a.ty < gap) {
-      const mid = (a.ty + b.ty) / 2;
-      a.ty = Math.max(minY, mid - gap / 2);
-      b.ty = Math.min(maxY, a.ty + gap);
-      a.ty = Math.min(a.ty, b.ty - gap);
-    }
-  }
-
-  return (
-    <g style={{ pointerEvents: "none" }}>
-      {resolved.map((l) => (
-        <Callout key={l.dataKey} leg={l} R={R} narrow={narrow} svgW={width} C={C} />
-      ))}
-    </g>
-  );
+  };
 }
 
 function Logo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="w-7 h-7 bg-ink rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
+      <div className="w-7 h-7 bg-neutral-950 rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
         <div className="w-[3.5px] h-[5px] rounded-sm bg-green-500" />
         <div className="w-[3.5px] h-[8px] rounded-sm bg-green-500" />
         <div className="w-[3.5px] h-[11px] rounded-sm bg-green-500" />
       </div>
-      <span className="text-[15px] font-extrabold tracking-tight text-ink">
+      <span className="text-[15px] font-extrabold tracking-tight text-neutral-950">
         sokoview
       </span>
-      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-pos bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
+      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-green-600 bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
         replay
       </span>
     </div>
   );
 }
 
-/**
- * The only thing the header says about data: connected or not. No provider
- * names, no endpoints, no switch.
- */
-function StatusPill({ live, conn }) {
-  const loading = conn.state === "loading";
-  const ok = live && conn.state !== "err";
-  const label = loading ? "Connecting" : ok ? "Live" : "Offline";
-  const dot = loading ? "#f59e0b" : ok ? "#22c55e" : "#9ca3af";
-  return (
-    <span
-      className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-soft border border-line rounded-full pl-2 pr-2.5 py-[5px]"
-      title={ok ? "Connected to live price history" : "Running on sample data"}
-    >
-      <span
-        className="w-[7px] h-[7px] rounded-full flex-shrink-0"
-        style={{ background: dot, boxShadow: `0 0 0 3px ${dot}22` }}
-      />
-      {label}
-    </span>
-  );
-}
-
 function Eyebrow({ children }) {
   return (
-    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-mute mb-2">
+    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-2">
       {children}
     </div>
   );
@@ -634,15 +443,15 @@ function Seg({ options, value, onChange, accent = "green" }) {
   const on =
     accent === "green"
       ? "bg-green-500 text-white"
-      : "bg-ink text-page";
+      : "bg-neutral-950 text-white";
   return (
-    <div className="flex gap-1 p-1 bg-raised rounded-lg">
+    <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`flex-1 whitespace-nowrap text-[11px] font-bold py-1.5 px-2 rounded-md transition-colors ${
-            value === o.v ? on : "text-soft hover:text-ink"
+          className={`flex-1 text-[11px] font-bold py-1.5 px-2 rounded-md transition-colors ${
+            value === o.v ? on : "text-gray-500 hover:text-neutral-900"
           }`}
         >
           {o.l}
@@ -658,11 +467,11 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
       <Eyebrow>{label}</Eyebrow>
       <div
         className={`flex items-center border rounded-lg overflow-hidden ${
-          disabled ? "bg-raised border-line" : "bg-surface border-line"
+          disabled ? "bg-gray-50 border-gray-200" : "bg-white border-gray-300"
         }`}
       >
         {prefix && (
-          <span className="pl-3 text-[11px] font-bold text-mute">{prefix}</span>
+          <span className="pl-3 text-[11px] font-bold text-gray-400">{prefix}</span>
         )}
         <input
           type="number"
@@ -670,7 +479,7 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
           disabled={disabled}
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-          className="w-full px-2.5 py-2 text-[13px] font-bold text-ink outline-none tabular-nums bg-transparent disabled:text-mute"
+          className="w-full px-2.5 py-2 text-[13px] font-bold text-neutral-950 outline-none tabular-nums bg-transparent disabled:text-gray-400"
         />
       </div>
     </label>
@@ -685,18 +494,18 @@ function Toggle({ label, checked, onChange, hint }) {
     >
       <div
         className={`mt-[1px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-          checked ? "bg-green-500" : "bg-line"
+          checked ? "bg-green-500" : "bg-gray-300"
         }`}
       >
         <div
-          className={`absolute top-[2px] w-[14px] h-[14px] bg-surface rounded-full transition-all ${
+          className={`absolute top-[2px] w-[14px] h-[14px] bg-white rounded-full transition-all ${
             checked ? "left-[16px]" : "left-[2px]"
           }`}
         />
       </div>
       <div>
-        <div className="text-[12px] font-bold text-ink leading-tight">{label}</div>
-        {hint && <div className="text-[10.5px] text-mute leading-snug mt-0.5">{hint}</div>}
+        <div className="text-[12px] font-bold text-neutral-900 leading-tight">{label}</div>
+        {hint && <div className="text-[10.5px] text-gray-400 leading-snug mt-0.5">{hint}</div>}
       </div>
     </button>
   );
@@ -704,14 +513,14 @@ function Toggle({ label, checked, onChange, hint }) {
 
 function Stat({ label, value, sub, tone = "default", big }) {
   const tones = {
-    default: "text-ink",
-    green: "text-pos",
-    red: "text-neg",
-    muted: "text-mute",
+    default: "text-neutral-950",
+    green: "text-green-600",
+    red: "text-red-600",
+    muted: "text-gray-400",
   };
   return (
     <div>
-      <div className="text-[8.5px] font-bold uppercase tracking-[0.1em] text-mute">
+      <div className="text-[8.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
         {label}
       </div>
       <div
@@ -721,7 +530,7 @@ function Stat({ label, value, sub, tone = "default", big }) {
       >
         {value}
       </div>
-      {sub && <div className="text-[10px] text-mute tabular-nums">{sub}</div>}
+      {sub && <div className="text-[10px] text-gray-400 tabular-nums">{sub}</div>}
     </div>
   );
 }
@@ -737,8 +546,8 @@ function LiquidityNote({ liq }) {
   if (!bad && !warn) return null;
   return (
     <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
-      bad ? "bg-alertbg border-alertln text-alerttx"
-          : "bg-warnbg border-warnln text-warntx"}`}>
+      bad ? "bg-red-50 border-red-200 text-red-700"
+          : "bg-amber-50 border-amber-200 text-amber-700"}`}>
       Traded on {liq.pctTraded.toFixed(0)}% of days, longest gap {liq.dry} days.
       {bad
         ? " Too thin to simulate regular buying — treat any result as indicative only."
@@ -752,19 +561,19 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
   return (
     <div
       className={`rounded-xl border p-3.5 transition-opacity ${
-        dim ? "opacity-40 border-line" : "border-line"
+        dim ? "opacity-40 border-gray-200" : "border-gray-300"
       }`}
-      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : color + "55" } : {}}
+      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : "#d4d4d4" } : {}}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-          <span className="text-[12px] font-extrabold text-ink">{title}</span>
+          <span className="text-[12px] font-extrabold text-neutral-950">{title}</span>
         </div>
         {canDisable && (
           <button
             onClick={onToggle}
-            className="text-[10px] font-bold text-mute hover:text-ink"
+            className="text-[10px] font-bold text-gray-400 hover:text-neutral-900"
           >
             {enabled ? "Remove" : "Add"}
           </button>
@@ -779,7 +588,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
             <select
               value={leg.symbol}
               onChange={(e) => set({ symbol: e.target.value })}
-              className="w-full appearance-none bg-surface border border-line rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-ink outline-none"
+              className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-neutral-950 outline-none"
             >
               {symbols.map((s) => (
                 <option key={s} value={s}>
@@ -788,7 +597,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 text-mute absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
           <LiquidityNote liq={liq} />
         </div>
@@ -821,14 +630,14 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                 <select
                   value={leg.freq}
                   onChange={(e) => set({ freq: e.target.value })}
-                  className="w-full appearance-none bg-surface border border-line rounded-lg pl-3 pr-7 py-2 text-[12.5px] font-bold text-ink outline-none"
+                  className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-7 py-2 text-[12.5px] font-bold text-neutral-950 outline-none"
                 >
                   <option value="weekly">Weekly</option>
                   <option value="monthly">Monthly</option>
                   <option value="quarterly">Quarterly</option>
                   <option value="yearly">Yearly</option>
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-mute absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -843,7 +652,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
               disabled={lockLump}
             />
             {lockLump && (
-              <div className="text-[10px] text-mute mt-1 leading-snug">
+              <div className="text-[10px] text-gray-400 mt-1 leading-snug">
                 Matched to the other plan's total. Turn off capital matching to set it yourself.
               </div>
             )}
@@ -859,43 +668,16 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
    ==========================================================================*/
 
 export default function SokoviewReplay() {
-  /* ---- source ----
-     There is no data-source switch in the UI any more: the deploy either has
-     Supabase credentials and runs on real prices, or it doesn't and falls back
-     to sample paths. The header states which, and nothing else. */
-  const LIVE = Boolean(SB_URL && SB_KEY);
-  const source = LIVE ? "live" : "demo";
+  /* ---- source ---- */
+  const [source, setSource] = useState(SB_URL && SB_KEY ? "live" : "demo");
   const [liveData, setLiveData] = useState({});     // symbol -> bars
   const [universe, setUniverse] = useState([]);      // liquidity_profile rows
   const [resolution, setResolution] = useState("weekly"); // daily | weekly | monthly
   const sbCfg = { url: SB_URL, key: SB_KEY };
   const [conn, setConn] = useState({ state: "idle", msg: "" });
-  const [theme, toggleTheme] = useTheme();
-  const C = CHART[theme];
-  const [panelOpen, setPanelOpen] = useState(false);  // settings drawer, mobile only
-  const [narrow, setNarrow] = useState(
-    typeof window !== "undefined" ? window.innerWidth < 640 : false
-  );
-  useEffect(() => {
-    if (!panelOpen) return;
-    const onKey = (e) => e.key === "Escape" && setPanelOpen(false);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [panelOpen]);
-
-  useEffect(() => {
-    const onResize = () => {
-      setNarrow(window.innerWidth < 640);
-      if (window.innerWidth >= 1024) setPanelOpen(false);
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteSym, setPasteSym] = useState("CRDB");
+  const [pasteText, setPasteText] = useState("");
 
   /* ---- config ---- */
   const [legA, setLegA] = useState({
@@ -940,7 +722,7 @@ export default function SokoviewReplay() {
 
   // Pull the tradeable universe once, then auto-load whatever the legs need.
   useEffect(() => {
-    if (!LIVE) return;
+    if (source !== "live" || !SB_URL || !SB_KEY) return;
     let cancelled = false;
     (async () => {
       try {
@@ -951,7 +733,7 @@ export default function SokoviewReplay() {
       }
     })();
     return () => { cancelled = true; };
-  }, [LIVE]);
+  }, [source]);
 
   /* ---- windowed bars, aligned across both legs ---- */
   const { barsA, barsB, n } = useMemo(() => {
@@ -982,16 +764,14 @@ export default function SokoviewReplay() {
     };
   };
 
-  const cfgA = useMemo(
-    () => cfg(legA, periodsA, bOn ? legB : null, periodsB),
-    [legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
+  const simA = useMemo(
+    () => (barsA.length ? simulate(barsA, cfg(legA, periodsA, bOn ? legB : null, periodsB)) : null),
+    [barsA, legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
   );
-  const cfgB = useMemo(
-    () => cfg(legB, periodsB, legA, periodsA),
-    [legA, legB, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
+  const simB = useMemo(
+    () => (bOn && barsB.length ? simulate(barsB, cfg(legB, periodsB, legA, periodsA)) : null),
+    [barsB, legA, legB, bOn, periodsA, periodsB, matchCapital, whole, reinvest, feePct]
   );
-  const simA = useMemo(() => (barsA.length ? simulate(barsA, cfgA) : null), [barsA, cfgA]);
-  const simB = useMemo(() => (bOn && barsB.length ? simulate(barsB, cfgB) : null), [bOn, barsB, cfgB]);
 
   /* ---- keep t in range ---- */
   useEffect(() => {
@@ -1030,107 +810,39 @@ export default function SokoviewReplay() {
   const mA = useMemo(() => (simA ? metricsAt(simA, t) : null), [simA, t]);
   const mB = useMemo(() => (simB ? metricsAt(simB, t) : null), [simB, t]);
 
-  /* ---- line colours: company brand colours when two stocks race ---- */
-  const { colorA, colorB } = useMemo(() => {
-    if (!bOn || legA.symbol === legB.symbol) return { colorA: A_COLOR, colorB: C.plan };
-    const ca = brandColor(legA.symbol);
-    let cb = brandColor(legB.symbol);
-    if (cb === ca) cb = C.plan;
-    return { colorA: ca, colorB: cb };
-  }, [bOn, legA.symbol, legB.symbol, C.plan]);
-
-  const nameOf = (sym) => UNIVERSE[sym]?.name ?? sym;
-
-  /* ---- chart data ----
-     The axes stay FIXED across the whole replay (bucko-style): every row of the
-     window is always present, values are simply null beyond t so the lines grow
-     across a still frame instead of the frame rescaling. Phantom future rows
-     extend the x-axis ~24% past the end, which both reads as "the story
-     continues" and reserves room for the end-of-line callouts. */
-  const { chartData, xTicks, yDomain, yTicks } = useMemo(() => {
-    if (!simA) return { chartData: [], xTicks: [], yDomain: [0, 1], yTicks: undefined };
-    const nA = simA.path.length;
-    const rows = [];
-    for (let i = 0; i < nA; i++) {
+  /* ---- chart data ---- */
+  const chartData = useMemo(() => {
+    if (!simA) return [];
+    const out = [];
+    for (let i = 0; i <= t && i < simA.path.length; i++) {
       const a = simA.path[i];
       const b = simB?.path[i];
-      const on = i <= t;
       const row = { date: a.date };
       if (chartMode === "value") {
-        row.aVal = on ? a.value : null;
-        row.aInv = on ? a.invested : null;
-        if (b) { row.bVal = on ? b.value : null; row.bInv = on ? b.invested : null; }
+        row.aVal = a.value; row.aInv = a.invested;
+        if (b) { row.bVal = b.value; row.bInv = b.invested; }
       } else if (chartMode === "roi") {
-        row.aVal = on ? (a.invested > 0 ? ((a.value - a.invested) / a.invested) * 100 : 0) : null;
-        if (b) row.bVal = on ? (b.invested > 0 ? ((b.value - b.invested) / b.invested) * 100 : 0) : null;
+        row.aVal = a.invested > 0 ? ((a.value - a.invested) / a.invested) * 100 : 0;
+        if (b) row.bVal = b.invested > 0 ? ((b.value - b.invested) / b.invested) * 100 : 0;
       } else {
-        row.aVal = on ? a.price : null;
-        if (b) row.bVal = on ? b.price : null;
+        row.aVal = a.price;
+        if (b) row.bVal = b.price;
       }
-      rows.push(row);
+      out.push(row);
     }
-    const step = nA > 1
-      ? (Date.parse(simA.path[nA - 1].date) - Date.parse(simA.path[0].date)) / (nA - 1)
-      : 7 * DAY;
-    const pad = Math.max(4, Math.round(nA * 0.27));
-    const lastMs = Date.parse(simA.path[nA - 1].date);
-    for (let k = 1; k <= pad; k++) {
-      rows.push({ date: new Date(lastMs + step * k).toISOString().slice(0, 10) });
-    }
-    const xTicks = [rows[0].date, rows[Math.floor(rows.length / 2)].date, rows[rows.length - 1].date];
-
-    let hi = 0, lo = 0;
-    const scan = (path) => {
-      for (const q of path) {
-        if (chartMode === "value") hi = Math.max(hi, q.value, q.invested);
-        else if (chartMode === "price") hi = Math.max(hi, q.price);
-        else {
-          const r = q.invested > 0 ? ((q.value - q.invested) / q.invested) * 100 : 0;
-          hi = Math.max(hi, r); lo = Math.min(lo, r);
-        }
-      }
-    };
-    scan(simA.path);
-    if (simB) scan(simB.path);
-    const yMaxN = niceCeil((hi || 1) * 1.06);
-    let yDomain, yTicks;
-    if (chartMode === "roi") {
-      yDomain = [Math.min(0, Math.floor(lo * 1.06)), yMaxN];
-      yTicks = undefined;
-    } else {
-      yDomain = [0, yMaxN];
-      yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * yMaxN));
-    }
-    return { chartData: rows, xTicks, yDomain, yTicks };
+    return out;
   }, [simA, simB, t, chartMode]);
 
-  /* ---- end-of-line callouts ---- */
-  const calloutLegs = useMemo(() => {
-    if (!mA) return [];
-    const same = bOn && mB && legA.symbol === legB.symbol;
-    const planWord = (leg) =>
-      leg.strategy === "lump" ? "One-time" :
-      { weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" }[leg.freq] + " top-up";
-    const mk = (dataKey, leg, m, color) => ({
-      dataKey,
-      symbol: leg.symbol,
-      name: same ? planWord(leg) : nameOf(leg.symbol),
-      color,
-      value: m.value,
-      pill: chartMode === "roi" ? pct(m.roi) : chartMode === "price" ? tzs(m.price) : tzs(m.value),
-      sub: chartMode === "value" ? pct(m.roi) : null,
-      subUp: m.roi >= 0,
-    });
-    const legs = [mk("aVal", legA, mA, colorA)];
-    if (bOn && mB) legs.push(mk("bVal", legB, mB, colorB));
-    if (legs.length === 2) {
-      const aLead = mA.value >= mB.value;
-      legs[0].rank = aLead ? 1 : 2;
-      legs[1].rank = aLead ? 2 : 1;
-      legs[aLead ? 0 : 1].crown = true;
-    }
-    return legs;
-  }, [mA, mB, legA.symbol, legB.symbol, bOn, chartMode, colorA, colorB]);
+  /* ---- travelling logo markers ---- */
+  const lastIdx = chartData.length - 1;
+  const leadA = useMemo(
+    () => makeLeadMarker(legA.symbol, A_COLOR, lastIdx),
+    [legA.symbol, lastIdx]
+  );
+  const leadB = useMemo(
+    () => makeLeadMarker(legB.symbol, B_COLOR, lastIdx),
+    [legB.symbol, lastIdx]
+  );
 
   /* ---- presets ---- */
   const applyPreset = (p) => {
@@ -1185,512 +897,250 @@ export default function SokoviewReplay() {
 
   // Auto-load whenever a leg's symbol changes.
   useEffect(() => {
-    if (!LIVE) return;
+    if (source !== "live") return;
     loadSymbols(bOn ? [legA.symbol, legB.symbol] : [legA.symbol]);
-  }, [LIVE, legA.symbol, legB.symbol, bOn, loadSymbols]);
+  }, [source, legA.symbol, legB.symbol, bOn, loadSymbols]);
 
-  /* ---- the editorial headline, built from the current settings ---- */
-  const phraseOf = (leg, c) =>
-    leg.strategy === "lump" ? `${amt(c.lumpAmount)} once` : `${amt(c.perPeriod)}${FREQ_WORD[leg.freq]}`;
-  const phraseA = phraseOf(legA, cfgA);
-  const phraseB = phraseOf(legB, cfgB);
-  const startMon = barsA.length ? monYr(barsA[0].date) : "";
-  const sameSymbol = bOn && legA.symbol === legB.symbol;
-  const samePlan = bOn && !sameSymbol && phraseA === phraseB;
-
-  const Amount = ({ children }) => <span className="text-green-500">{children}</span>;
-  const Name = ({ children }) => <span className="headline-serif">{children}</span>;
-  const When = ({ children }) => <span className="text-mute">{children}</span>;
-
-  const headline = !bOn ? (
-    <>You put <Amount>{phraseA}</Amount> into <Name>{nameOf(legA.symbol)}</Name> starting <When>{startMon}</When></>
-  ) : sameSymbol ? (
-    <>You put <Amount>{phraseA}</Amount> vs <Amount>{phraseB}</Amount> into <Name>{nameOf(legA.symbol)}</Name> starting <When>{startMon}</When></>
-  ) : samePlan ? (
-    <>You put <Amount>{phraseA}</Amount> into each of <Name>{nameOf(legA.symbol)}</Name> and <Name>{nameOf(legB.symbol)}</Name> starting <When>{startMon}</When></>
-  ) : (
-    <>You put <Amount>{phraseA}</Amount> into <Name>{nameOf(legA.symbol)}</Name> and <Amount>{phraseB}</Amount> into <Name>{nameOf(legB.symbol)}</Name> starting <When>{startMon}</When></>
-  );
-
-  const chipLegs = sameSymbol || !bOn
-    ? [{ symbol: legA.symbol, color: colorA }]
-    : [{ symbol: legA.symbol, color: colorA }, { symbol: legB.symbol, color: colorB }];
-
-  /* ---- leaderboard ---- */
-  const labelFor = (leg) =>
-    `${leg.symbol} · ${leg.strategy === "lump" ? "one-time" : `${leg.freq} top-up`}`;
-  const board = useMemo(() => {
-    const rows = [];
-    if (mA) rows.push({ key: "A", symbol: legA.symbol, name: nameOf(legA.symbol), plan: labelFor(legA), value: mA.value, roi: mA.roi, color: colorA });
-    if (bOn && mB) rows.push({ key: "B", symbol: legB.symbol, name: nameOf(legB.symbol), plan: labelFor(legB), value: mB.value, roi: mB.roi, color: colorB });
-    return rows.sort((u, v) => v.value - u.value);
-  }, [mA, mB, bOn, legA, legB, colorA, colorB]);
-
-  /* ---- Claude insights ----
-     Keyed on the configuration, not the scrub position, so playing the replay
-     or dragging the timeline never triggers a call. One request per distinct
-     simulation, cached for the session. */
-  const insightKey = useMemo(() => {
-    if (!mA) return null;
-    const legKey = (leg, c) =>
-      `${leg.symbol}|${leg.strategy}|${c.lumpAmount}|${c.perPeriod}|${leg.freq}`;
-    return [
-      source, resolution, startYear, whole, reinvest, feePct,
-      legKey(legA, cfgA), bOn ? legKey(legB, cfgB) : "-",
-    ].join("~");
-  }, [mA, source, resolution, startYear, whole, reinvest, feePct, legA, legB, cfgA, cfgB, bOn]);
-
-  const insightCache = useRef(new Map());
-  const [insight, setInsight] = useState({ state: "idle", items: [], msg: "" });
-
-  const buildSummary = useCallback(() => {
-    if (!simA || !mA) return null;
-    const endIdx = simA.path.length - 1;
-    const fin = (sim) => metricsAt(sim, sim.path.length - 1);
-    const leg = (l, sim, c) => {
-      const m = fin(sim);
-      // Six evenly spaced checkpoints: enough shape for Claude to comment on,
-      // a fraction of the tokens a full series would cost.
-      const marks = [];
-      for (let k = 1; k <= 6; k++) {
-        const i = Math.round((endIdx * k) / 6);
-        marks.push({ on: sim.path[i].date.slice(0, 7), worth: Math.round(sim.path[i].value) });
-      }
-      return {
-        stock: `${nameOf(l.symbol)} (${l.symbol})`,
-        plan: l.strategy === "lump"
-          ? `one-time ${amt(c.lumpAmount)}`
-          : `${amt(c.perPeriod)} every ${l.freq.replace("ly", "")}`,
-        invested: Math.round(m.invested),
-        worthNow: Math.round(m.value),
-        totalReturnPct: +(m.roi * 100).toFixed(1),
-        annualisedPct: m.irr == null ? null : +(m.irr * 100).toFixed(1),
-        dividends: Math.round(m.divTotal),
-        sharesHeld: Math.round(m.shares),
-        cashNeverInvested: Math.round(m.cash),
-        worstDropPct: +(m.mdd * 100).toFixed(1),
-        checkpoints: marks,
-      };
-    };
-    return {
-      currency: "TZS",
-      dataIsSample: source === "demo",
-      period: { from: barsA[0].date, to: barsA[endIdx].date },
-      brokerageFeePct: feePct,
-      dividendsReinvested: reinvest,
-      wholeSharesOnly: whole,
-      planA: leg(legA, simA, cfgA),
-      planB: bOn && simB ? leg(legB, simB, cfgB) : null,
-    };
-  }, [simA, simB, mA, bOn, legA, legB, cfgA, cfgB, barsA, feePct, reinvest, whole, source]);
-
-  const fetchInsight = useCallback(async (key, { force = false } = {}) => {
-    if (!key) return;
-    if (!force && insightCache.current.has(key)) {
-      setInsight({ state: "ok", items: insightCache.current.get(key), msg: "" });
-      return;
-    }
-    const summary = buildSummary();
-    if (!summary) return;
-    setInsight({ state: "loading", items: [], msg: "" });
+  const ingestPaste = () => {
     try {
-      const res = await fetch("/api/insight", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(summary),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      const items = body.insights ?? [];
-      insightCache.current.set(key, items);
-      setInsight({ state: "ok", items, msg: "" });
+      const bars = normalizeSeries(JSON.parse(pasteText));
+      if (!bars.length) throw new Error("No usable rows — check the field names.");
+      setLiveData((d) => ({ ...d, [pasteSym]: bars }));
+      setConn({ state: "ok", msg: `${bars.length} bars loaded for ${pasteSym}` });
+      setPasteText(""); setPasteOpen(false);
     } catch (e) {
-      setInsight({ state: "err", items: [], msg: e.message });
+      setConn({ state: "err", msg: e.message });
     }
-  }, [buildSummary]);
+  };
 
-  // Debounced so dragging the fee slider is one call, not thirty.
-  useEffect(() => {
-    if (!insightKey) return;
-    if (insightCache.current.has(insightKey)) {
-      setInsight({ state: "ok", items: insightCache.current.get(insightKey), msg: "" });
-      return;
-    }
-    const id = setTimeout(() => fetchInsight(insightKey), 1100);
-    return () => clearTimeout(id);
-  }, [insightKey, fetchInsight]);
+  /* ---- derived headline ---- */
+  const leader = mA && mB ? (mA.value >= mB.value ? "A" : "B") : null;
+  const gap = mA && mB ? Math.abs(mA.value - mB.value) : 0;
+  const total = mA && mB ? mA.value + mB.value : 0;
+  const shareA = total > 0 ? (mA.value / total) * 100 : 50;
 
-  const caption = source === "demo"
-    ? "SAMPLE DATA · ILLUSTRATIVE ONLY"
-    : chartMode === "value" ? "HISTORICAL PORTFOLIO VALUE · ADJUSTED PRICES"
-    : chartMode === "roi" ? "RETURN ON MONEY INVESTED · ADJUSTED PRICES"
-    : "HISTORICAL SHARE PRICE · ADJUSTED";
+  const labelFor = (leg, m) =>
+    `${leg.symbol} · ${leg.strategy === "lump" ? "one-time" : `${leg.freq} top-up`}`;
 
   const noData = n === 0;
 
   return (
-    <div className="w-full min-h-screen bg-page text-ink antialiased">
+    <div className="w-full min-h-screen bg-white text-neutral-950 antialiased">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Instrument+Serif:ital@1&family=IBM+Plex+Mono:wght@500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
         * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
-        .headline-serif { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.06em; letter-spacing: 0; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
-        .frame-shadow { box-shadow: var(--sv-shadow); }
+        .dots { background-image: radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 20px 20px; }
         input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; }
-        input[type=range]::-webkit-slider-runnable-track{ height:4px; background:var(--sv-line); border-radius:99px; }
-        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:18px; height:18px; margin-top:-7px; border-radius:50%; background:var(--sv-ink); border:3px solid var(--sv-surface); box-shadow:0 1px 4px rgba(0,0,0,.3); cursor:pointer; }
-        input[type=range]::-moz-range-track{ height:4px; background:var(--sv-line); border-radius:99px; }
-        input[type=range]::-moz-range-thumb{ width:18px; height:18px; border-radius:50%; background:var(--sv-ink); border:3px solid var(--sv-surface); cursor:pointer; }
-        select option { background: var(--sv-surface); color: var(--sv-ink); }
-        :focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; }
+        input[type=range]::-webkit-slider-runnable-track{ height:4px; background:#e5e7eb; border-radius:99px; }
+        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; margin-top:-6px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.3); cursor:pointer; }
+        input[type=range]::-moz-range-track{ height:4px; background:#e5e7eb; border-radius:99px; }
+        input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; cursor:pointer; }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
       `}</style>
 
-      {/* ---------- header: brand, connection status, theme ---------- */}
-      <header className="border-b border-line px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 sticky top-0 bg-surface/95 backdrop-blur z-20">
+      {/* ---------- header ---------- */}
+      <header className="border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-wrap gap-3 sticky top-0 bg-white/95 backdrop-blur z-20">
         <Logo />
         <div className="flex items-center gap-2">
-          <StatusPill live={LIVE} conn={conn} />
-          <button
-            onClick={toggleTheme}
-            className="w-9 h-9 rounded-lg border border-line flex items-center justify-center text-soft hover:text-ink hover:border-ink"
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={theme === "dark" ? "Light theme" : "Dark theme"}
-          >
-            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+            <button
+              onClick={() => setSource("demo")}
+              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
+                source === "demo" ? "bg-neutral-950 text-white" : "text-gray-500"
+              }`}
+            >
+              <FlaskConical className="w-3 h-3" /> Sample data
+            </button>
+            <button
+              onClick={() => setSource("live")}
+              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
+                source === "live" ? "bg-green-500 text-white" : "text-gray-500"
+              }`}
+            >
+              <Plug className="w-3 h-3" /> Sokoview API
+            </button>
+          </div>
         </div>
       </header>
 
-      {conn.state === "err" && (
-        <div className="px-4 sm:px-5 py-2 bg-alertbg border-b border-alertln text-alerttx text-[11px] font-semibold flex items-start gap-1.5">
-          <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
-          <span>Couldn't reach price history — {conn.msg}</span>
+      {/* ---------- live panel ---------- */}
+      {source === "live" && (
+        <div className="border-b border-gray-200 bg-gray-50 px-5 py-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex items-end justify-between gap-3 flex-wrap">
+              <div>
+                <Eyebrow>Data source</Eyebrow>
+                <div className="text-[12px] font-bold text-neutral-900">
+                  Sokoview price history · split &amp; bonus adjusted
+                </div>
+                <div className="text-[10.5px] text-gray-500 mt-0.5">
+                  {universe.length
+                    ? `${universe.length} instruments · ${universe[0]?.first ?? ""} to ${universe[0]?.last ?? ""}`
+                    : "Loading universe…"}
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <div>
+                  <Eyebrow>Resolution</Eyebrow>
+                  <Seg
+                    value={resolution}
+                    onChange={setResolution}
+                    options={[
+                      { v: "monthly", l: "Monthly" },
+                      { v: "weekly", l: "Weekly" },
+                      { v: "daily", l: "Daily" },
+                    ]}
+                  />
+                </div>
+                <button
+                  onClick={() => setPasteOpen((v) => !v)}
+                  className="border border-gray-300 bg-white text-[11px] font-bold px-3 py-2.5 rounded-lg hover:border-neutral-900"
+                >
+                  Paste JSON
+                </button>
+              </div>
+            </div>
+
+            {conn.state === "loading" && (
+              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-gray-500">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading price history…
+              </div>
+            )}
+            {conn.state === "ok" && (
+              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-green-700">
+                <Check className="w-3.5 h-3.5" /> {conn.msg}
+              </div>
+            )}
+            {conn.state === "err" && (
+              <div className="mt-2.5 flex items-start gap-1.5 text-[11px] font-semibold text-red-600">
+                <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+                <span>
+                  {conn.msg}
+                  <span className="block text-gray-500 font-normal mt-0.5">
+                    Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy.
+                  </span>
+                </span>
+              </div>
+            )}
+
+            {pasteOpen && (
+              <div className="mt-3 border-t border-gray-200 pt-3">
+                <div className="flex gap-2 mb-2">
+                  <input
+                    value={pasteSym}
+                    onChange={(e) => setPasteSym(e.target.value.toUpperCase())}
+                    className="w-28 bg-white border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none"
+                    placeholder="SYMBOL"
+                  />
+                  <button
+                    onClick={ingestPaste}
+                    className="bg-green-500 text-white text-[11px] font-bold px-4 py-2 rounded-lg hover:bg-green-600"
+                  >
+                    Load into replay
+                  </button>
+                </div>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={4}
+                  placeholder='Paste the raw response, e.g. {"data":[{"date":"2024-01-02","close":540}, …]}'
+                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-[11px] font-mono outline-none focus:border-green-500"
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      <main className="max-w-6xl mx-auto px-5 pb-10">
-        {noData ? (
-          <section className="py-20 text-center">
-            <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
-            <div className="text-[12px] text-soft">
-              Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
-            </div>
-          </section>
-        ) : (
-          <>
-            {/* ---------- editorial headline ---------- */}
-            <section className="relative text-center pt-9 pb-7 overflow-hidden">
-              <div
-                className="absolute -top-10 left-1/2 -translate-x-1/2 w-[min(520px,100%)] h-[320px] rounded-full pointer-events-none"
-                style={{ background: "radial-gradient(circle, rgba(34,197,94,.10) 0%, transparent 68%)" }}
-              />
-              <h1 className="relative max-w-3xl mx-auto text-[27px] sm:text-[40px] font-extrabold leading-[1.08] tracking-[-0.03em] text-ink">
-                {headline}
-              </h1>
-              <div className="relative flex items-center justify-center gap-8 mt-6 flex-wrap">
-                {chipLegs.map((c) => (
-                  <div key={c.symbol} className="flex items-center gap-2.5">
-                    <span className="rounded-full bg-white p-[3px]" style={{ boxShadow: `0 0 0 2.5px ${c.color}` }}>
-                      <StockMark symbol={c.symbol} size={40} />
-                    </span>
-                    <div className="text-left">
-                      <div className="text-[13px] font-extrabold leading-tight">{nameOf(c.symbol)}</div>
-                      <div className="text-[9px] font-bold tracking-[0.2em] text-mute" style={{ fontFamily: MONO }}>
-                        {c.symbol}
-                      </div>
+      <main className="max-w-6xl mx-auto px-5 py-6">
+        {/* ---------- hero: the race ---------- */}
+        <section className="dots border border-gray-200 rounded-2xl p-5 mb-5 relative overflow-hidden">
+          <div
+            className="absolute -top-16 -right-16 w-80 h-80 rounded-full pointer-events-none"
+            style={{ background: "radial-gradient(circle, rgba(34,197,94,.14) 0%, transparent 68%)" }}
+          />
+          <div className="relative">
+            {noData ? (
+              <div className="py-10 text-center">
+                <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
+                <div className="text-[12px] text-gray-500">
+                  Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between flex-wrap gap-4 mb-5">
+                  <div>
+                    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-green-600 mb-1.5">
+                      Replaying from {prettyDate(barsA[0].date)}
+                    </div>
+                    <div className="text-[34px] sm:text-[42px] font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums">
+                      {prettyDate(barsA[t]?.date ?? barsA[0].date)}
+                    </div>
+                    <div className="text-[11px] text-gray-500 font-semibold mt-1 tabular-nums">
+                      {legA.symbol} at {tzs(mA?.price)}
+                      {mB && legB.symbol !== legA.symbol && (
+                        <> · {legB.symbol} at {tzs(mB.price)}</>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
 
-            {/* On phones the chart comes first and settings collapse into a
-                drawer, so the thing people came to see isn't below a wall of
-                inputs. On lg the rail returns to the left column. */}
-            <button
-              onClick={() => setPanelOpen(true)}
-              className="lg:hidden w-full mb-3 flex items-center justify-between gap-2 border border-line bg-surface rounded-xl px-4 py-3 active:bg-raised"
-              aria-expanded={panelOpen}
-              aria-controls="sv-settings"
-            >
-              <span className="flex items-center gap-2 text-[12.5px] font-extrabold">
-                <SlidersHorizontal className="w-4 h-4 text-soft" /> Settings
-              </span>
-              <span className="text-[10.5px] font-bold text-soft truncate max-w-[55%] text-right">
-                {legA.symbol}{bOn && legB.symbol !== legA.symbol ? ` vs ${legB.symbol}` : ""} · from {startYear}
-              </span>
-            </button>
-
-            {panelOpen && (
-              <div
-                className="lg:hidden fixed inset-0 bg-black/45 z-40"
-                onClick={() => setPanelOpen(false)}
-                aria-hidden="true"
-              />
-            )}
-
-            <div className="flex flex-col lg:grid lg:grid-cols-[300px_1fr] gap-5">
-              {/* ---------- left rail ---------- */}
-              {/* On phones this is a bottom sheet: it has to appear where the
-                  thumb already is, not 1,700px further down the page. Above lg
-                  it is just the left column again. */}
-              <aside
-                id="sv-settings"
-                className={
-                  "order-2 lg:order-1 lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-none " +
-                  "lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:space-y-4 lg:block " +
-                  (panelOpen
-                    ? "fixed inset-x-0 bottom-0 z-50 max-h-[82vh] overflow-y-auto overscroll-contain " +
-                      "rounded-t-2xl border-t border-line bg-page px-4 pb-8 shadow-[0_-12px_40px_rgba(0,0,0,.28)] space-y-4"
-                    : "hidden lg:block")
-                }
-              >
-                {/* sheet chrome, mobile only */}
-                <div className="lg:hidden sticky top-0 -mx-4 px-4 pt-2.5 pb-3 bg-page border-b border-hair z-10">
-                  <div className="w-9 h-1 rounded-full bg-line mx-auto mb-3" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-extrabold">Settings</span>
-                    <button
-                      onClick={() => setPanelOpen(false)}
-                      className="text-[11.5px] font-extrabold text-page bg-ink rounded-lg px-3.5 py-2"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <Eyebrow>Start from</Eyebrow>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[2016, 2018, 2020, 2022, 2024, 2025, 2026].map((y) => (
-                      <button
-                        key={y}
-                        onClick={() => setStartYear(y)}
-                        className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
-                          startYear === y
-                            ? "bg-ink text-page border-neutral-950"
-                            : "border-line text-soft hover:border-ink bg-surface"
-                        }`}
+                  {mA && mB && (
+                    <div className="text-right">
+                      <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-1">
+                        Ahead by
+                      </div>
+                      <div
+                        className="text-[26px] sm:text-[32px] font-extrabold leading-none tabular-nums tracking-tight"
+                        style={{ color: leader === "A" ? A_COLOR : B_COLOR }}
                       >
-                        {y}
-                      </button>
-                    ))}
-                  </div>
+                        {compact(gap)}
+                      </div>
+                      <div className="text-[11px] font-bold text-gray-500 mt-1">
+                        {leader === "A" ? labelFor(legA) : labelFor(legB)}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {LIVE && (
-                  <div>
-                    <Eyebrow>Resolution</Eyebrow>
-                    <Seg
-                      value={resolution}
-                      onChange={setResolution}
-                      options={[
-                        { v: "monthly", l: "Monthly" },
-                        { v: "weekly", l: "Weekly" },
-                        { v: "daily", l: "Daily" },
-                      ]}
-                    />
+                {/* the race bar — signature element */}
+                {mA && mB && (
+                  <div className="mb-5">
+                    <div className="flex h-9 rounded-lg overflow-hidden border border-gray-200">
+                      <div
+                        className="flex items-center px-3 transition-all duration-100"
+                        style={{ width: `${Math.max(shareA, 8)}%`, background: A_COLOR }}
+                      >
+                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
+                          {compact(mA.value)}
+                        </span>
+                      </div>
+                      <div
+                        className="flex items-center justify-end px-3 flex-1 transition-all duration-100"
+                        style={{ background: B_COLOR }}
+                      >
+                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
+                          {compact(mB.value)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between mt-1.5 text-[10.5px] font-bold">
+                      <span className="text-green-600 flex items-center gap-1.5">
+                        <StockMark symbol={legA.symbol} size={16} /> {labelFor(legA)}
+                      </span>
+                      <span className="text-neutral-900 flex items-center gap-1.5">
+                        {labelFor(legB)} <StockMark symbol={legB.symbol} size={16} />
+                      </span>
+                    </div>
                   </div>
                 )}
-
-                <div>
-                  <Eyebrow>Quick comparisons</Eyebrow>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { k: "lumpVsDca", l: "One-time vs recurring" },
-                      { k: "stockVsStockLump", l: "Stock vs stock, one-time" },
-                      { k: "stockVsStockDca", l: "Stock vs stock, recurring" },
-                      { k: "single", l: "Single stock only" },
-                    ].map((pr) => (
-                      <button
-                        key={pr.k}
-                        onClick={() => applyPreset(pr.k)}
-                        className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-line bg-surface hover:border-green-500 hover:bg-green-500/5 leading-tight"
-                      >
-                        {pr.l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <LegPanel
-                  leg={legA}
-                  set={(pr) => setLegA((st) => ({ ...st, ...pr }))}
-                  color={colorA}
-                  title="Plan A"
-                  enabled
-                  canDisable={false}
-                  symbols={symbols}
-                  lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
-                  lockedValue={legB.perPeriod * periodsB}
-                  liq={liqOf[legA.symbol]}
-                />
-                <LegPanel
-                  leg={legB}
-                  set={(pr) => setLegB((st) => ({ ...st, ...pr }))}
-                  color={bOn ? colorB : C.plan}
-                  title="Plan B"
-                  enabled={bOn}
-                  onToggle={() => setBOn((v) => !v)}
-                  canDisable
-                  symbols={symbols}
-                  lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
-                  lockedValue={legA.perPeriod * periodsA}
-                  liq={liqOf[legB.symbol]}
-                />
-
-                <div className="rounded-xl border border-line bg-surface p-3.5 space-y-3">
-                  <Eyebrow>Assumptions</Eyebrow>
-                  {bOn &&
-                    ((legA.strategy === "lump" && legB.strategy === "dca") ||
-                      (legB.strategy === "lump" && legA.strategy === "dca")) && (
-                      <Toggle
-                        label="Match total capital"
-                        checked={matchCapital}
-                        onChange={setMatchCapital}
-                        hint="Sets the one-time amount equal to everything the recurring plan contributes, so the comparison is like-for-like."
-                      />
-                    )}
-                  <Toggle
-                    label="Whole shares only"
-                    checked={whole}
-                    onChange={setWhole}
-                    hint="The DSE doesn't trade fractions. Leftover cash waits for the next buy."
-                  />
-                  <Toggle
-                    label="Reinvest dividends"
-                    checked={reinvest}
-                    onChange={setReinvest}
-                    hint="Off means dividends are held as cash and still counted in your total."
-                  />
-                  <div>
-                    <Eyebrow>Brokerage fee</Eyebrow>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min={0} max={3} step={0.1}
-                        value={feePct}
-                        onChange={(e) => setFeePct(Number(e.target.value))}
-                        className="flex-1 h-4"
-                      />
-                      <span className="text-[12px] font-extrabold tabular-nums w-11 text-right">
-                        {feePct.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </aside>
-
-              {/* ---------- right: the frame, transport, leaderboard, details ---------- */}
-              <section className="space-y-4 order-1 lg:order-2 min-w-0">
-                {/* the shareable frame */}
-                <div className="bg-surface border border-line rounded-3xl px-3 sm:px-6 pt-4 sm:pt-5 pb-2 frame-shadow">
-                  <div className="flex items-start justify-between gap-2 flex-wrap">
-                    <div>
-                      <div className="text-[30px] sm:text-[52px] font-extrabold tracking-[-0.035em] leading-none tabular-nums text-ink">
-                        {barsA[t] ? monYr(barsA[t].date) : ""}
-                      </div>
-                      <div className="text-[10.5px] text-mute font-semibold mt-1.5 tabular-nums">
-                        {legA.symbol} at {tzs(mA?.price)}
-                        {mB && legB.symbol !== legA.symbol && <> · {legB.symbol} at {tzs(mB.price)}</>}
-                      </div>
-                    </div>
-                    <Seg
-                      value={chartMode}
-                      onChange={setChartMode}
-                      options={[
-                        { v: "value", l: "Value" },
-                        { v: "roi", l: "Return %" },
-                        { v: "price", l: "Price" },
-                      ]}
-                    />
-                  </div>
-
-                  <div style={{ width: "100%", height: narrow ? 300 : 380 }}>
-                    <ResponsiveContainer>
-                      <ComposedChart data={chartData} margin={{ top: 30, right: narrow ? 22 : 34, bottom: 4, left: 0 }}>
-                        <CartesianGrid stroke={C.grid} vertical={false} />
-                        <XAxis
-                          dataKey="date"
-                          ticks={xTicks}
-                          interval={0}
-                          tick={{ fontSize: narrow ? 10 : 12, fill: C.tick, fontWeight: 600, fontFamily: MONO }}
-                          tickFormatter={narrow ? (d) => monYr(d).replace(" 20", " '") : monYr}
-                          tickMargin={10}
-                          axisLine={{ stroke: C.axis, strokeWidth: C.axisW }}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          domain={yDomain}
-                          ticks={yTicks}
-                          tick={{ fontSize: narrow ? 10 : 12, fill: C.tick, fontWeight: 600, fontFamily: MONO }}
-                          tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : axisCompact(v))}
-                          axisLine={{ stroke: C.axis, strokeWidth: C.axisW }}
-                          tickLine={false}
-                          width={narrow ? 42 : 50}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            borderRadius: 12, border: "1px solid var(--sv-line)",
-                            background: "var(--sv-surface)", color: "var(--sv-ink)",
-                            fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.16)",
-                          }}
-                          itemStyle={{ color: "var(--sv-ink)" }}
-                          labelStyle={{ color: "var(--sv-soft)" }}
-                          labelFormatter={prettyDate}
-                          formatter={(v, name) => [
-                            chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
-                            {
-                              aVal: nameOf(legA.symbol) + (sameSymbol ? " · A" : ""),
-                              bVal: nameOf(legB.symbol) + (sameSymbol ? " · B" : ""),
-                              aInv: "Money in (A)", bInv: "Money in (B)",
-                            }[name] ?? name,
-                          ]}
-                        />
-                        {chartMode === "roi" && <ReferenceLine y={0} stroke={C.zero} />}
-                        {chartMode === "value" && (
-                          <Line type="stepAfter" dataKey="aInv" stroke={C.dash} strokeWidth={1.5}
-                                strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                        )}
-                        {chartMode === "value" && bOn && (
-                          <Line type="stepAfter" dataKey="bInv" stroke={C.dash} strokeWidth={1.5}
-                                strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                        )}
-                        <Line type="monotone" dataKey="aVal" stroke={colorA} strokeWidth={2.6}
-                              dot={false} activeDot={false} isAnimationActive={false} />
-                        {bOn && (
-                          <Line type="monotone" dataKey="bVal" stroke={colorB} strokeWidth={2.6}
-                                dot={false} activeDot={false} isAnimationActive={false} />
-                        )}
-                        <Customized component={(cp) => <ChartCallouts {...cp} legs={calloutLegs} C={C} />} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  <div className="relative flex items-center justify-center py-2.5 mt-1 border-t border-hair">
-                    <span
-                      className="text-[9px] text-mute font-semibold"
-                      style={{ fontFamily: MONO, letterSpacing: "0.14em" }}
-                    >
-                      {caption}
-                    </span>
-                    <span className="absolute right-0 hidden min-[480px]:flex items-center gap-1.5 opacity-70">
-                      <span className="w-4 h-4 bg-neutral-950 dark:bg-raised rounded-[4px] flex items-end gap-[1.5px] px-[3px] pb-[3px]">
-                        <span className="w-[2px] h-[3px] rounded-[1px] bg-green-500" />
-                        <span className="w-[2px] h-[5px] rounded-[1px] bg-green-500" />
-                        <span className="w-[2px] h-[7px] rounded-[1px] bg-green-500" />
-                      </span>
-                      <span className="text-[10.5px] font-extrabold tracking-tight text-ink">sokoview</span>
-                    </span>
-                  </div>
-                </div>
 
                 {/* transport */}
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     onClick={() => (playing ? setPlaying(false) : play())}
-                    className="w-11 h-11 rounded-full bg-ink text-page flex items-center justify-center hover:opacity-80 flex-shrink-0"
+                    className="w-11 h-11 rounded-full bg-neutral-950 text-white flex items-center justify-center hover:bg-neutral-800 flex-shrink-0"
                     aria-label={playing ? "Pause replay" : "Play replay"}
                   >
                     {playing ? (
@@ -1701,7 +1151,7 @@ export default function SokoviewReplay() {
                   </button>
                   <button
                     onClick={restart}
-                    className="w-9 h-9 rounded-full border border-line bg-surface flex items-center justify-center hover:border-ink flex-shrink-0"
+                    className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center hover:border-neutral-900 flex-shrink-0"
                     aria-label="Restart replay"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1717,174 +1167,292 @@ export default function SokoviewReplay() {
                     aria-label="Scrub through history"
                   />
 
-                  <div className="flex gap-1 p-1 bg-raised rounded-lg flex-shrink-0">
-                    {[0.5, 1, 2, 4].map((sp) => (
+                  <div className="flex gap-1 p-1 bg-gray-100 rounded-lg flex-shrink-0">
+                    {[0.5, 1, 2, 4].map((s) => (
                       <button
-                        key={sp}
-                        onClick={() => setSpeed(sp)}
+                        key={s}
+                        onClick={() => setSpeed(s)}
                         className={`text-[10.5px] font-bold py-1 px-2 rounded ${
-                          speed === sp ? "bg-surface shadow-sm text-ink" : "text-soft"
+                          speed === s ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"
                         }`}
                       >
-                        {sp}×
+                        {s}×
                       </button>
                     ))}
                   </div>
                 </div>
+              </>
+            )}
+          </div>
+        </section>
 
-                {/* leaderboard */}
-                <div className={`grid gap-3 ${board.length > 1 ? "sm:grid-cols-2" : ""}`}>
-                  {board.map((r, i) => (
-                    <div
-                      key={r.key}
-                      className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-                        i === 0 && board.length > 1
-                          ? "bg-win border-winline"
-                          : "bg-surface border-line"
+        {!noData && (
+          <div className="grid lg:grid-cols-[300px_1fr] gap-5">
+            {/* ---------- left rail ---------- */}
+            <aside className="space-y-4">
+              <div>
+                <Eyebrow>Start from</Eyebrow>
+                <div className="flex flex-wrap gap-1.5">
+                  {[2016, 2018, 2020, 2022, 2024, 2025, 2026].map((y) => (
+                    <button
+                      key={y}
+                      onClick={() => setStartYear(y)}
+                      className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
+                        startYear === y
+                          ? "bg-neutral-950 text-white border-neutral-950"
+                          : "border-gray-300 text-gray-500 hover:border-neutral-900"
                       }`}
                     >
-                      <span className="text-[12px] font-bold text-mute w-4 flex-shrink-0" style={{ fontFamily: MONO }}>
-                        {i + 1}
+                      {y}
+                    </button>
+                  ))}
+                </div>
+                {periodsA <= 12 && legA.strategy === "dca" && (
+                  <div className="text-[10px] text-amber-600 mt-1.5 leading-snug">
+                    Only {periodsA} {legA.freq} contribution{periodsA === 1 ? "" : "s"} in this
+                    window — too few for a recurring plan to say much.
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Eyebrow>Quick comparisons</Eyebrow>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { k: "lumpVsDca", l: "One-time vs recurring" },
+                    { k: "stockVsStockLump", l: "Stock vs stock, one-time" },
+                    { k: "stockVsStockDca", l: "Stock vs stock, recurring" },
+                    { k: "single", l: "Single stock only" },
+                  ].map((p) => (
+                    <button
+                      key={p.k}
+                      onClick={() => applyPreset(p.k)}
+                      className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-gray-300 hover:border-green-500 hover:bg-green-500/5 leading-tight"
+                    >
+                      {p.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <LegPanel
+                leg={legA}
+                set={(p) => setLegA((s) => ({ ...s, ...p }))}
+                color={A_COLOR}
+                title="Plan A"
+                enabled
+                canDisable={false}
+                symbols={symbols}
+                lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
+                lockedValue={legB.perPeriod * periodsB}
+                liq={liqOf[legA.symbol]}
+              />
+              <LegPanel
+                leg={legB}
+                set={(p) => setLegB((s) => ({ ...s, ...p }))}
+                color={B_COLOR}
+                title="Plan B"
+                enabled={bOn}
+                onToggle={() => setBOn((v) => !v)}
+                canDisable
+                symbols={symbols}
+                lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
+                lockedValue={legA.perPeriod * periodsA}
+                liq={liqOf[legB.symbol]}
+              />
+
+              <div className="rounded-xl border border-gray-300 p-3.5 space-y-3">
+                <Eyebrow>Assumptions</Eyebrow>
+                {bOn &&
+                  ((legA.strategy === "lump" && legB.strategy === "dca") ||
+                    (legB.strategy === "lump" && legA.strategy === "dca")) && (
+                    <Toggle
+                      label="Match total capital"
+                      checked={matchCapital}
+                      onChange={setMatchCapital}
+                      hint="Sets the one-time amount equal to everything the recurring plan contributes, so the comparison is like-for-like."
+                    />
+                  )}
+                <Toggle
+                  label="Whole shares only"
+                  checked={whole}
+                  onChange={setWhole}
+                  hint="The DSE doesn't trade fractions. Leftover cash waits for the next buy."
+                />
+                <Toggle
+                  label="Reinvest dividends"
+                  checked={reinvest}
+                  onChange={setReinvest}
+                  hint="Off means dividends are held as cash and still counted in your total."
+                />
+                <div>
+                  <Eyebrow>Brokerage fee</Eyebrow>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0} max={3} step={0.1}
+                      value={feePct}
+                      onChange={(e) => setFeePct(Number(e.target.value))}
+                      className="flex-1 h-4"
+                    />
+                    <span className="text-[12px] font-extrabold tabular-nums w-11 text-right">
+                      {feePct.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            {/* ---------- right: chart + results ---------- */}
+            <section className="space-y-4">
+              <div className="border border-gray-200 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <Seg
+                    value={chartMode}
+                    onChange={setChartMode}
+                    options={[
+                      { v: "value", l: "Portfolio value" },
+                      { v: "roi", l: "Return %" },
+                      { v: "price", l: "Share price" },
+                    ]}
+                  />
+                  <div className="flex items-center gap-3 text-[10px] font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-[2px]" style={{ background: A_COLOR }} /> Plan A
+                    </span>
+                    {bOn && (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-[2px]" style={{ background: B_COLOR }} /> Plan B
                       </span>
-                      <span className="rounded-full bg-white p-[2px] flex-shrink-0" style={{ boxShadow: `0 0 0 2px ${r.color}` }}>
-                        <StockMark symbol={r.symbol} size={30} />
+                    )}
+                    {chartMode === "value" && (
+                      <span className="flex items-center gap-1.5 text-gray-400">
+                        <span className="w-3 border-t-2 border-dashed border-gray-400" /> Money in
                       </span>
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-extrabold truncate leading-tight">{r.name}</div>
-                        <div className="text-[9px] font-bold tracking-[0.1em] text-mute uppercase whitespace-nowrap" style={{ fontFamily: MONO }}>
-                          {r.plan}
-                        </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ width: "100%", height: 300 }}>
+                  <ResponsiveContainer>
+                    <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
+                      <CartesianGrid stroke="#f3f4f6" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
+                        tickFormatter={(d) => d.slice(0, 7)}
+                        minTickGap={50}
+                        axisLine={{ stroke: "#e5e7eb" }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
+                        tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
+                        axisLine={false}
+                        tickLine={false}
+                        width={52}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: 12, border: "1px solid #e5e7eb",
+                          fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
+                        }}
+                        labelFormatter={prettyDate}
+                        formatter={(v, name) => [
+                          chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
+                          { aVal: "Plan A", bVal: "Plan B", aInv: "A money in", bInv: "B money in" }[name] ?? name,
+                        ]}
+                      />
+                      {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                      {chartMode === "value" && (
+                        <Line type="stepAfter" dataKey="aInv" stroke="#86efac" strokeWidth={1.5}
+                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                      )}
+                      {chartMode === "value" && bOn && (
+                        <Line type="stepAfter" dataKey="bInv" stroke="#9ca3af" strokeWidth={1.5}
+                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+                      )}
+                      <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.4}
+                            dot={leadA} activeDot={false} isAnimationActive={false} />
+                      {bOn && (
+                        <Line type="monotone" dataKey="bVal" stroke={B_COLOR} strokeWidth={2.4}
+                              dot={leadB} activeDot={false} isAnimationActive={false} />
+                      )}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* result cards */}
+              <div className={`grid gap-4 ${bOn ? "md:grid-cols-2" : ""}`}>
+                {[
+                  { m: mA, leg: legA, color: A_COLOR, title: "Plan A", show: true },
+                  { m: mB, leg: legB, color: B_COLOR, title: "Plan B", show: bOn },
+                ]
+                  .filter((x) => x.show && x.m)
+                  .map(({ m, leg, color, title }) => (
+                    <div key={title} className="border border-gray-200 rounded-2xl overflow-hidden">
+                      <div
+                        className="px-4 py-2.5 flex items-center justify-between"
+                        style={{ background: color }}
+                      >
+                        <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
+                          <StockMark symbol={leg.symbol} size={18} ring />
+                          {title} · {leg.symbol}
+                        </span>
+                        <span className="text-[10px] font-bold text-white/70">
+                          {leg.strategy === "lump" ? "One-time" : `${leg.freq} top-up`}
+                        </span>
                       </div>
-                      <div className="ml-auto text-right flex-shrink-0">
-                        <div className="text-[15px] font-extrabold tabular-nums leading-tight">{tzs(r.value)}</div>
-                        <div className={`text-[10.5px] font-bold tabular-nums ${r.roi >= 0 ? "text-pos" : "text-neg"}`}>
-                          {pct(r.roi)}
+                      <div className="p-4">
+                        <div className="mb-4">
+                          <Stat
+                            label="Worth today"
+                            value={tzs(m.value)}
+                            big
+                            tone={m.gain >= 0 ? "green" : "red"}
+                            sub={`${pct(m.roi)} on ${tzs(m.invested)} invested`}
+                          />
                         </div>
+                        <div className="grid grid-cols-2 gap-y-3.5 gap-x-3">
+                          <Stat
+                            label="Profit"
+                            value={tzs(m.gain)}
+                            tone={m.gain >= 0 ? "green" : "red"}
+                          />
+                          <Stat
+                            label="Annualised (money-weighted)"
+                            value={pct(m.irr)}
+                            tone={m.irr == null ? "muted" : m.irr >= 0 ? "green" : "red"}
+                          />
+                          <Stat label="Shares held" value={nf.format(Math.round(m.shares))} />
+                          <Stat label="Average cost" value={tzs(m.avgCost)} />
+                          <Stat label="Dividends" value={tzs(m.divTotal)} sub={reinvest ? "reinvested" : "held as cash"} />
+                          <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
+                        </div>
+                        {m.cash > 1 && (
+                          <div className="mt-3 pt-3 border-t border-gray-100 text-[10.5px] text-gray-400 font-semibold tabular-nums">
+                            {tzs(m.cash)} still uninvested
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
-                </div>
+              </div>
 
-                {/* what Claude noticed */}
-                <div className="border border-line bg-surface rounded-2xl p-4">
-                  <div className="flex items-center justify-between gap-2 mb-2.5">
-                    <span className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.12em] text-soft">
-                      <Sparkles className="w-3.5 h-3.5 text-pos" /> What stands out
-                    </span>
-                    <button
-                      onClick={() => fetchInsight(insightKey, { force: true })}
-                      disabled={insight.state === "loading"}
-                      className="flex items-center gap-1.5 text-[10.5px] font-bold text-soft hover:text-ink disabled:opacity-40"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${insight.state === "loading" ? "animate-spin" : ""}`} />
-                      Refresh
-                    </button>
-                  </div>
-
-                  {insight.state === "loading" && (
-                    <div className="space-y-2" aria-live="polite">
-                      {[0, 1].map((i) => (
-                        <div key={i} className="h-3 rounded bg-raised animate-pulse" style={{ width: i ? "72%" : "92%" }} />
-                      ))}
-                    </div>
-                  )}
-
-                  {insight.state === "ok" && insight.items.length > 0 && (
-                    <div className="space-y-3">
-                      {insight.items.map((it, i) => (
-                        <div key={i}>
-                          <div className="text-[12px] font-extrabold text-ink leading-tight">{it.title}</div>
-                          <div className="text-[11.5px] text-soft leading-relaxed mt-0.5">{it.body}</div>
-                        </div>
-                      ))}
-                      <div className="text-[9.5px] text-mute pt-1">
-                        Written by Claude from the figures above. Not investment advice.
-                      </div>
-                    </div>
-                  )}
-
-                  {insight.state === "err" && (
-                    <div className="text-[11px] text-soft leading-snug">
-                      Insights are unavailable right now. {insight.msg}
-                    </div>
-                  )}
-
-                  {insight.state === "idle" && (
-                    <div className="text-[11px] text-soft">Reading the results…</div>
-                  )}
-                </div>
-
-                {/* result cards */}
-                <div className={`grid gap-4 ${bOn ? "md:grid-cols-2" : ""}`}>
-                  {[
-                    { m: mA, leg: legA, color: colorA, title: "Plan A", show: true },
-                    { m: mB, leg: legB, color: colorB, title: "Plan B", show: bOn },
-                  ]
-                    .filter((x) => x.show && x.m)
-                    .map(({ m, leg, color, title }) => (
-                      <div key={title} className="border border-line bg-surface rounded-2xl overflow-hidden">
-                        <div
-                          className="px-4 py-2.5 flex items-center justify-between"
-                          style={{ background: color }}
-                        >
-                          <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
-                            <StockMark symbol={leg.symbol} size={18} ring />
-                            {title} · {leg.symbol}
-                          </span>
-                          <span className="text-[10px] font-bold text-white/70">
-                            {leg.strategy === "lump" ? "One-time" : `${leg.freq} top-up`}
-                          </span>
-                        </div>
-                        <div className="p-4">
-                          <div className="mb-4">
-                            <Stat
-                              label="Worth today"
-                              value={tzs(m.value)}
-                              big
-                              tone={m.gain >= 0 ? "green" : "red"}
-                              sub={`${pct(m.roi)} on ${tzs(m.invested)} invested`}
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-y-3.5 gap-x-3">
-                            <Stat
-                              label="Profit"
-                              value={tzs(m.gain)}
-                              tone={m.gain >= 0 ? "green" : "red"}
-                            />
-                            <Stat
-                              label="Annualised (money-weighted)"
-                              value={pct(m.irr)}
-                              tone={m.irr == null ? "muted" : m.irr >= 0 ? "green" : "red"}
-                            />
-                            <Stat label="Shares held" value={nf.format(Math.round(m.shares))} />
-                            <Stat label="Average cost" value={tzs(m.avgCost)} />
-                            <Stat label="Dividends" value={tzs(m.divTotal)} sub={reinvest ? "reinvested" : "held as cash"} />
-                            <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
-                          </div>
-                          {m.cash > 1 && (
-                            <div className="mt-3 pt-3 border-t border-hair text-[10.5px] text-mute font-semibold tabular-nums">
-                              {tzs(m.cash)} still uninvested
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-
-                {/* method note */}
-                <div className="flex gap-2.5 text-[11px] text-soft leading-relaxed border border-line bg-surface rounded-xl p-3.5">
-                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-mute" />
-                  <p>
-                    Comparing a one-time investment against a recurring one on total return alone is
-                    misleading — the recurring plan has less money in the market for less time.
-                    The <strong className="text-ink">annualised money-weighted return</strong> above
-                    accounts for when each contribution actually landed, so it's the fairer number
-                    to judge them by. Past results don't predict future ones.
-                  </p>
-                </div>
-              </section>
-            </div>
-          </>
+              {/* method note */}
+              <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
+                <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+                <p>
+                  Comparing a one-time investment against a recurring one on total return alone is
+                  misleading — the recurring plan has less money in the market for less time.
+                  The <strong className="text-neutral-900">annualised money-weighted return</strong> above
+                  accounts for when each contribution actually landed, so it's the fairer number
+                  to judge them by. Past results don't predict future ones.
+                </p>
+              </div>
+            </section>
+          </div>
         )}
       </main>
     </div>

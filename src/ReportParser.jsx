@@ -20,6 +20,10 @@ const SYMBOLS = {
 const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
                 "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
 
+const prettyLong = (d) =>
+  d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB",
+      { day: "numeric", month: "long", year: "numeric" }) : "";
+
 function num(tok) {
   if (tok == null) return null;
   const t = String(tok).trim().replace(/,/g, "").replace(/^\+/, "");
@@ -94,6 +98,86 @@ function parseDividends(text) {
 }
 
 /* ============================================================================
+   UTT AMIS Net Asset Value table
+   ==========================================================================*/
+
+const FUNDS = {
+  "UMOJA FUND": "UMOJA",
+  "WEKEZA MAISHA FUND": "WEKEZA",
+  "WEKEZA MAISHA": "WEKEZA",
+  "WATOTO FUND": "WATOTO",
+  "JIKIMU FUND": "JIKIMU",
+  "LIQUID FUND": "LIQUID",
+  "BOND FUND": "BOND",
+};
+
+function looksLikeUtt(text) {
+  const t = text.toUpperCase();
+  return /NET ASSET VALUE|NAV PER UNIT|SCHEME NAME|REPURCHASE PRICE/.test(t) ||
+         Object.keys(FUNDS).some((f) => t.includes(f));
+}
+
+/**
+ * UTT publishes DD-MM-YYYY. That is ambiguous against MM-DD-YYYY for the first
+ * twelve days of a month, so we return both the parsed date and whether it was
+ * ambiguous, and the UI asks the user to confirm rather than guessing silently.
+ */
+function parseUttDate(tok) {
+  const m = String(tok).match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (!m) return null;
+  const a = +m[1], b = +m[2], y = +m[3];
+  if (a > 31 || b > 31) return null;
+  const iso = `${y}-${String(b).padStart(2, "0")}-${String(a).padStart(2, "0")}`;
+  return { iso, ambiguous: a <= 12 && b <= 12 && a !== b, raw: m[0] };
+}
+
+/**
+ * Rows arrive as a flat run of lines when the table is copied out of the page.
+ * Anchor on the scheme name, then take the next five numbers:
+ *   net asset value, units outstanding, NAV/unit, sale price, repurchase price
+ * followed by the valuation date.
+ */
+function parseUtt(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  let reportDate = null, ambiguous = false, rawDate = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const name = lines[i].toUpperCase().replace(/^\d+[\s.)]*/, "").trim();
+    const sym = FUNDS[name];
+    if (!sym || out.some((r) => r.symbol === sym)) continue;
+
+    const nums = [];
+    let j = i + 1, dateTok = null;
+    while (j < lines.length && nums.length < 5) {
+      const v = num(lines[j]);
+      if (v != null) nums.push(v);
+      else if (/\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(lines[j])) { dateTok = lines[j]; break; }
+      else if (FUNDS[lines[j].toUpperCase().replace(/^\d+[\s.)]*/, "").trim()]) break;
+      j++;
+    }
+    // the date usually follows the five numbers
+    if (!dateTok) {
+      for (let k = j; k < Math.min(j + 3, lines.length); k++)
+        if (/\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(lines[k])) { dateTok = lines[k]; break; }
+    }
+    if (nums.length < 5) continue;
+
+    const [fundSize, units, nav, sale, repurchase] = nums;
+    if (dateTok && !reportDate) {
+      const d = parseUttDate(dateTok);
+      if (d) { reportDate = d.iso; ambiguous = d.ambiguous; rawDate = d.raw; }
+    }
+    out.push({
+      symbol: sym, name: name.replace(/\b\w/g, (c) => c.toUpperCase()),
+      fundSize, units, nav, sale, repurchase,
+      spread: sale > 0 ? (100 * (sale - repurchase)) / sale : 0,
+    });
+  }
+  return { rows: out, reportDate, ambiguous, rawDate };
+}
+
+/* ============================================================================
    UI
    ==========================================================================*/
 
@@ -116,17 +200,29 @@ function Logo() {
 export default function ReportParser() {
   const [text, setText] = useState("");
   const [copied, setCopied] = useState("");
+  const [dateOverride, setDateOverride] = useState("");
+
+  const mode = useMemo(() => (text.trim() && looksLikeUtt(text) ? "utt" : "dse"), [text]);
 
   const parsed = useMemo(() => {
     if (!text.trim()) return null;
-    const date = parseReportDate(text);
-    const rows = parsePrices(text);
-    const divs = parseDividends(text);
-    return { date, rows, divs };
-  }, [text]);
+    if (mode === "utt") {
+      const u = parseUtt(text);
+      return { kind: "utt", date: dateOverride || u.reportDate,
+               rows: u.rows, divs: [], ambiguous: u.ambiguous, rawDate: u.rawDate };
+    }
+    return { kind: "dse", date: dateOverride || parseReportDate(text),
+             rows: parsePrices(text), divs: parseDividends(text) };
+  }, [text, mode, dateOverride]);
 
   const csv = useMemo(() => {
     if (!parsed?.rows.length || !parsed.date) return "";
+    if (parsed.kind === "utt") {
+      const head = "symbol,trade_date,source,close,sale_price,repurchase_price,units_outstanding,fund_size";
+      return [head, ...parsed.rows.map((r) =>
+        `${r.symbol},${parsed.date},utt_amis,${r.nav},${r.sale},${r.repurchase},${r.units},${r.fundSize}`
+      )].join("\n");
+    }
     const head = "symbol,trade_date,source,low,high,volume,traded";
     const body = parsed.rows.map((r) =>
       `${r.symbol},${parsed.date},dse_report,${r.low},${r.high},${r.volume},${r.volume > 0}`);
@@ -135,6 +231,23 @@ export default function ReportParser() {
 
   const sql = useMemo(() => {
     if (!parsed?.rows.length || !parsed.date) return "";
+    if (parsed.kind === "utt") {
+      return [
+        `-- UTT AMIS net asset values, ${parsed.date}`,
+        `-- ${parsed.rows.length} schemes. close = NAV per unit; sale and repurchase`,
+        `-- are what an investor actually pays and receives.`,
+        ``,
+        `insert into price_raw (symbol, trade_date, source, close, sale_price,`,
+        `                       repurchase_price, units_outstanding, fund_size) values`,
+        parsed.rows.map((r) =>
+          `  ('${r.symbol}', '${parsed.date}', 'utt_amis', ${r.nav}, ${r.sale}, ` +
+          `${r.repurchase}, ${r.units}, ${r.fundSize})`).join(",\n"),
+        `on conflict (symbol, trade_date, source) do update set`,
+        `  close = excluded.close, sale_price = excluded.sale_price,`,
+        `  repurchase_price = excluded.repurchase_price,`,
+        `  units_outstanding = excluded.units_outstanding, fund_size = excluded.fund_size;`,
+      ].join("\n");
+    }
     const lines = [
       `-- DSE market report ${parsed.date}`,
       `-- ${parsed.rows.length} instruments · ${parsed.rows.filter(r => r.volume > 0).length} traded`,
@@ -177,12 +290,13 @@ export default function ReportParser() {
       <main className="max-w-5xl mx-auto px-5 py-6 space-y-5">
         <div>
           <h1 className="text-[20px] font-extrabold tracking-tight mb-1">
-            Paste a DSE market report
+            Paste a market report
           </h1>
           <p className="text-[12px] text-gray-500 leading-relaxed max-w-2xl">
-            Select the whole email body and paste it below. This reads the range and
-            volume for every instrument, plus any dividend announcement, and gives you
-            SQL to run in Supabase. Nothing is sent anywhere — it parses in your browser.
+            Two formats are recognised automatically: a <strong className="text-neutral-900">DSE
+            daily market report</strong> email, or the <strong className="text-neutral-900">UTT
+            AMIS Net Asset Value</strong> table. Paste either and you get SQL to run in
+            Supabase. Nothing is sent anywhere — it parses in your browser.
           </p>
         </div>
 
@@ -204,14 +318,41 @@ export default function ReportParser() {
           </div>
         )}
 
+        {parsed?.kind === "utt" && parsed.ambiguous && (
+          <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-amber-800 leading-relaxed">
+              <strong>Check the date.</strong> UTT wrote{" "}
+              <code className="bg-white px-1 rounded">{parsed.rawDate}</code>, which reads as{" "}
+              <strong>{prettyLong(parsed.date)}</strong> in day-month order — but the same
+              digits would be a different day in month-first order. Confirm before running
+              the SQL: a wrong date silently overwrites another day.
+              <div className="mt-2 flex items-center gap-2">
+                <input type="date" value={parsed.date}
+                  onChange={(e) => setDateOverride(e.target.value)}
+                  className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <span className="text-[10.5px] text-amber-700">adjust if wrong</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {parsed?.date && (
           <>
             <div className="grid sm:grid-cols-3 gap-3">
-              {[
-                { l: "Report date", v: parsed.date },
-                { l: "Instruments", v: parsed.rows.length },
-                { l: "Traded", v: parsed.rows.filter((r) => r.volume > 0).length },
-              ].map((s) => (
+              {(parsed.kind === "utt"
+                ? [
+                    { l: "Valued", v: parsed.date },
+                    { l: "Schemes", v: parsed.rows.length },
+                    { l: "Combined size",
+                      v: "TZS " + (parsed.rows.reduce((t, r) => t + r.fundSize, 0) / 1e12).toFixed(2) + "T" },
+                  ]
+                : [
+                    { l: "Report date", v: parsed.date },
+                    { l: "Instruments", v: parsed.rows.length },
+                    { l: "Traded", v: parsed.rows.filter((r) => r.volume > 0).length },
+                  ]
+              ).map((s) => (
                 <div key={s.l} className="border border-gray-200 rounded-xl p-3.5">
                   <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-1">
                     {s.l}
@@ -258,6 +399,48 @@ export default function ReportParser() {
                   </button>
                 </div>
               </div>
+              {parsed.kind === "utt" ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11.5px]">
+                    <thead>
+                      <tr className="text-[9px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                        <th className="text-left px-4 py-2">Scheme</th>
+                        <th className="text-right px-3 py-2">NAV / unit</th>
+                        <th className="text-right px-3 py-2">Buy at</th>
+                        <th className="text-right px-3 py-2">Sell at</th>
+                        <th className="text-right px-3 py-2">Round trip</th>
+                        <th className="text-right px-4 py-2">Fund size</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {parsed.rows.map((r) => (
+                        <tr key={r.symbol} className="hover:bg-gray-50">
+                          <td className="px-4 py-2">
+                            <span className="font-extrabold">{r.symbol}</span>
+                            <span className="text-[9.5px] text-gray-400 ml-1.5">{r.name}</span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-bold tabular-nums">
+                            {r.nav.toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                            {r.sale.toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                            {r.repurchase.toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-bold tabular-nums ${
+                            r.spread >= 1.5 ? "text-red-600" : r.spread > 0 ? "text-amber-600" : "text-green-600"}`}>
+                            {r.spread === 0 ? "free" : "−" + r.spread.toFixed(2) + "%"}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums text-gray-500">
+                            {(r.fundSize / 1e9).toFixed(1)}B
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
               <div className="overflow-x-auto max-h-96">
                 <table className="w-full text-[11.5px]">
                   <thead className="sticky top-0 bg-white">
@@ -293,6 +476,7 @@ export default function ReportParser() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </>
         )}
@@ -300,11 +484,24 @@ export default function ReportParser() {
         <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
           <p>
-            The report's main table has Low, High and Shares Traded — <strong className="text-neutral-900">no
-            closing price</strong>. The email also interleaves the top-gainer panels into
-            that table, so a close inferred by position would often be the day's high
-            instead. Range and volume are what the report actually states, and volume is
-            the thing your capture is missing. Closes still come from the vendor feed.
+            {mode === "utt" ? (
+              <>
+                <strong className="text-neutral-900">Sale price is what you pay; repurchase
+                is what you get back.</strong> On the balanced funds those differ — a unit
+                bought and sold the same day loses 1% on Umoja and Watoto, 2% on Wekeza
+                Maisha and Jikimu. Liquid and Bond have no spread. Storing all three means
+                a replay can model the real cost of entering and leaving rather than
+                assuming you transact at NAV.
+              </>
+            ) : (
+              <>
+                The report's main table has Low, High and Shares Traded — <strong className="text-neutral-900">no
+                closing price</strong>. The email also interleaves the top-gainer panels into
+                that table, so a close inferred by position would often be the day's high
+                instead. Range and volume are what the report actually states, and volume is
+                the thing your capture is missing. Closes still come from the vendor feed.
+              </>
+            )}
           </p>
         </div>
       </main>

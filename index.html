@@ -7,20 +7,9 @@
     <meta name="description" content="Replay DSE stocks: compare a one-time investment against buying regularly, or two stocks head to head." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Instrument+Serif:ital@1&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <script>
-      // Resolve the theme before first paint so a dark-theme user never sees
-      // a white flash on load.
-      (function () {
-        try {
-          var t = localStorage.getItem("sokoview-replay-theme");
-          if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          if (t === "dark") document.documentElement.classList.add("dark");
-        } catch (e) {}
-      })();
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
