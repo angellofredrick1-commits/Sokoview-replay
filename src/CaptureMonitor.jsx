@@ -58,6 +58,9 @@ const timeEAT = (iso) => {
 const daysBetween = (a, b) =>
   Math.round((Date.parse(b + "T00:00:00") - Date.parse(a + "T00:00:00")) / 864e5);
 
+
+const KIND_LABEL = { equity: "Equities", etf: "ETFs", fund: "Unit trusts" };
+
 const GREEN = "#22c55e";
 const BLACK = "#0a0a0a";
 
@@ -168,6 +171,7 @@ export default function CaptureMonitor() {
   const [instruments, setInstruments] = useState([]);
   const [state, setState] = useState({ loading: false, error: "", at: null });
   const [sortBy, setSortBy] = useState("volume");
+  const [assetKind, setAssetKind] = useState("equity");
 
   const load = useCallback(async () => {
     if (!cfg.url || !cfg.key) return;
@@ -176,7 +180,7 @@ export default function CaptureMonitor() {
       const [r, a, i] = await Promise.all([
         sb("price_raw?select=*&order=trade_date.desc,symbol.asc&limit=5000", cfg),
         sb("corporate_action?select=*", cfg),
-        sb("instrument?select=symbol,name", cfg),
+        sb("instrument?select=symbol,name,kind", cfg),
       ]);
       setRaw(r); setActions(a); setInstruments(i);
       setState({ loading: false, error: "", at: new Date().toISOString() });
@@ -190,6 +194,15 @@ export default function CaptureMonitor() {
   const nameOf = useMemo(() => {
     const m = {};
     instruments.forEach((i) => { m[i.symbol] = i.name; });
+    return m;
+  }, [instruments]);
+
+  // A fund is not a share: no volume, no trade count, and a sale/repurchase
+  // spread instead. Splitting by kind keeps each table honest about what it
+  // is measuring rather than showing dashes in columns that never apply.
+  const kindOf = useMemo(() => {
+    const m = {};
+    instruments.forEach((i) => { m[i.symbol] = i.kind || "equity"; });
     return m;
   }, [instruments]);
 
@@ -224,8 +237,13 @@ export default function CaptureMonitor() {
       const withVol = rows.filter((r) => r.volume != null).sort((a, b) => rank(a) - rank(b));
       const base = withClose[0] ?? rows[0];
       const v = withVol[0];
+      const fundRow = rows.find((r) => r.sale_price != null);
       return {
         ...base,
+        sale_price: fundRow?.sale_price ?? null,
+        repurchase_price: fundRow?.repurchase_price ?? null,
+        units_outstanding: fundRow?.units_outstanding ?? null,
+        fund_size: fundRow?.fund_size ?? null,
         volume: v ? v.volume : null,
         volume_source: v ? v.source : null,
         close_source: withClose[0] ? withClose[0].source : null,
@@ -351,9 +369,19 @@ export default function CaptureMonitor() {
     };
   }, [raw, actions]);
 
+  const kindsPresent = useMemo(() => {
+    if (!model) return [];
+    const set = new Set(model.today.map((r) => kindOf[r.symbol] || "equity"));
+    return ["equity", "etf", "fund"].filter((k) => set.has(k));
+  }, [model, kindOf]);
+
+  useEffect(() => {
+    if (kindsPresent.length && !kindsPresent.includes(assetKind)) setAssetKind(kindsPresent[0]);
+  }, [kindsPresent, assetKind]);
+
   const todaySorted = useMemo(() => {
     if (!model) return [];
-    const rows = [...model.today];
+    const rows = model.today.filter((r) => (kindOf[r.symbol] || "equity") === assetKind);
     const val = (r) => {
       if (sortBy === "volume") return r.volume == null ? -1 : Number(r.volume);
       if (sortBy === "move") return Math.abs(Number(r.pct_change ?? 0));
@@ -363,7 +391,7 @@ export default function CaptureMonitor() {
     return sortBy === "symbol"
       ? rows.sort((a, b) => a.symbol.localeCompare(b.symbol))
       : rows.sort((a, b) => val(b) - val(a));
-  }, [model, sortBy]);
+  }, [model, sortBy, assetKind, kindOf]);
 
   /* ---- config gate ---- */
   if (showCfg || !cfg.url || !cfg.key) {
@@ -572,19 +600,23 @@ export default function CaptureMonitor() {
             <Section
               title={`Market on ${prettyDate(model.latest)}`}
               hint={
-                volCoverage === 0
+                assetKind === "fund"
+                  ? "Buy at the sale price, sell at the repurchase price. The gap is what a same-day round trip costs."
+                  : volCoverage === 0
                   ? "No volume for this day, so 'traded' falls back to the seen-today flag — not evidence of a trade."
                   : `${nf.format(model.totalVolume)} shares traded across ` +
                     `${model.tradedByVol.length} instruments. Traded is derived from volume.`
               }
               right={
                 <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
-                  {[
-                    { v: "volume", l: "Volume" },
-                    { v: "move", l: "Move" },
-                    { v: "price", l: "Price" },
-                    { v: "symbol", l: "A–Z" },
-                  ].map((o) => (
+                  {(assetKind === "fund"
+                    ? [{ v: "price", l: "NAV" }, { v: "move", l: "Move" }, { v: "symbol", l: "A–Z" }]
+                    : [
+                        { v: "volume", l: "Volume" },
+                        { v: "move", l: "Move" },
+                        { v: "price", l: "Price" },
+                        { v: "symbol", l: "A–Z" },
+                      ]).map((o) => (
                     <button
                       key={o.v}
                       onClick={() => setSortBy(o.v)}
@@ -598,6 +630,87 @@ export default function CaptureMonitor() {
                 </div>
               }
             >
+              {kindsPresent.length > 1 && (
+                <div className="px-4 pt-3 flex gap-1.5">
+                  {kindsPresent.map((k) => {
+                    const n = model.today.filter((r) => (kindOf[r.symbol] || "equity") === k).length;
+                    return (
+                      <button key={k} onClick={() => setAssetKind(k)}
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border ${
+                          assetKind === k
+                            ? "bg-neutral-950 text-white border-neutral-950"
+                            : "border-gray-300 text-gray-500 hover:border-neutral-900"}`}>
+                        {KIND_LABEL[k]} <span className="opacity-60">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {assetKind === "fund" ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11.5px]">
+                    <thead>
+                      <tr className="text-[9px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                        <th className="text-left px-4 py-2">Scheme</th>
+                        <th className="text-right px-3 py-2">NAV / unit</th>
+                        <th className="text-right px-3 py-2">Change</th>
+                        <th className="text-right px-3 py-2">Buy at</th>
+                        <th className="text-right px-3 py-2">Sell at</th>
+                        <th className="text-right px-3 py-2">Round trip</th>
+                        <th className="text-right px-4 py-2">Fund size</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {todaySorted.map((r) => {
+                        const spread = r.sale_price > 0
+                          ? (100 * (r.sale_price - r.repurchase_price)) / r.sale_price : null;
+                        const ch = Number(r.pct_change ?? 0);
+                        return (
+                          <tr key={r.symbol} className="hover:bg-gray-50">
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2.5">
+                                <StockMark symbol={r.symbol} size={22} />
+                                <div className="min-w-0">
+                                  <div className="font-extrabold text-neutral-950">{r.symbol}</div>
+                                  <div className="text-[9.5px] text-gray-400 truncate max-w-[150px]">
+                                    {nameOf[r.symbol]}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold tabular-nums">
+                              {r.close == null ? "—"
+                                : Number(r.close).toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-bold tabular-nums ${
+                              ch > 0 ? "text-green-600" : ch < 0 ? "text-red-600" : "text-gray-400"}`}>
+                              {ch === 0 ? "—" : pct(ch, 3)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                              {r.sale_price == null ? "—"
+                                : Number(r.sale_price).toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                              {r.repurchase_price == null ? "—"
+                                : Number(r.repurchase_price).toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-bold tabular-nums ${
+                              spread == null ? "text-gray-300"
+                                : spread >= 1.5 ? "text-red-600"
+                                : spread > 0 ? "text-amber-600" : "text-green-600"}`}>
+                              {spread == null ? "—" : spread === 0 ? "free" : "−" + spread.toFixed(2) + "%"}
+                            </td>
+                            <td className="px-4 py-2 text-right tabular-nums text-gray-500">
+                              {r.fund_size == null ? "—" : (r.fund_size / 1e9).toFixed(1) + "B"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-[11.5px]">
                   <thead>
@@ -671,6 +784,7 @@ export default function CaptureMonitor() {
                   </tbody>
                 </table>
               </div>
+              )}
             </Section>
 
             {/* ---------- coverage grid ---------- */}

@@ -32,6 +32,9 @@ export function monogramText(symbol) {
 }
 
 /** Symbols still needing a logo — kept visible rather than silently monogrammed. */
+/** Unit trusts have no logo; their monograms read cleanly as three letters. */
+export const FUND_SYMBOLS = ["UMOJA","WEKEZA","WATOTO","JIKIMU","LIQUID","BOND"];
+
 export const MISSING_LOGOS = [
   "VODA", "NICO", "JATU", "SWALA", "USL", "JHL", "NMG", "MUCOBA",
   "AFRIPRISE", "VERTEX-ETF", "IEACLC-ETF",

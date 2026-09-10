@@ -71,6 +71,8 @@ const SOURCE_META = {
 const srcColor = (s) => SOURCE_META[s]?.color ?? "#e5e7eb";
 const srcRank = (s) => SOURCE_META[s]?.rank ?? 9;
 
+const KIND_LABEL = { equity: "Equities", etf: "ETFs", fund: "Unit trusts" };
+
 const RANGES = [
   { k: "1y", l: "1Y", years: 1 },
   { k: "3y", l: "3Y", years: 3 },
@@ -272,9 +274,23 @@ export default function StockDetail() {
     if (!cfg.url || !cfg.key) return;
     (async () => {
       try {
-        const u = await sb(
-          "liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell&order=pct_days_traded.desc",
-          cfg);
+        // Funds never appear in liquidity_profile — they have no volume — so the
+        // picker is built from the instrument table and enriched with liquidity
+        // where it exists.
+        const [inst, liq] = await Promise.all([
+          sb("instrument?select=symbol,name,kind&order=symbol.asc", cfg),
+          sb("liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell", cfg)
+            .catch(() => []),
+        ]);
+        const byLiq = {};
+        liq.forEach((l) => { byLiq[l.symbol] = l; });
+        const u = inst.map((i) => ({
+          symbol: i.symbol, name: i.name, kind: i.kind || "equity",
+          pct_days_traded: byLiq[i.symbol]?.pct_days_traded ?? null,
+          days: byLiq[i.symbol]?.days ?? null,
+          longest_dry_spell: byLiq[i.symbol]?.longest_dry_spell ?? null,
+        })).sort((a, b) =>
+          (b.pct_days_traded ?? -1) - (a.pct_days_traded ?? -1) || a.symbol.localeCompare(b.symbol));
         setUniverse(u);
         if (u.length && !u.some((x) => x.symbol === symbol)) setSymbol(u[0].symbol);
       } catch (e) { setState((s) => ({ ...s, error: e.message })); }
@@ -287,7 +303,7 @@ export default function StockDetail() {
     setState({ loading: true, error: "" });
     try {
       const [r, a] = await Promise.all([
-        sbAll(`price_raw?select=trade_date,source,close,low,high,volume,traded` +
+        sbAll(`price_raw?select=trade_date,source,close,low,high,volume,traded,sale_price,repurchase_price,units_outstanding,fund_size` +
               `&symbol=eq.${encodeURIComponent(symbol)}&order=trade_date.asc`, cfg),
         sb(`corporate_action?select=*&symbol=eq.${encodeURIComponent(symbol)}&order=ex_date.asc`, cfg),
       ]);
@@ -310,8 +326,13 @@ export default function StockDetail() {
       const wc = rs.filter((r) => r.close != null).sort((a, b) => srcRank(a.source) - srcRank(b.source));
       const wv = rs.filter((r) => r.volume != null).sort((a, b) => srcRank(a.source) - srcRank(b.source));
       const base = wc[0] ?? rs[0];
+      const f = rs.find((r) => r.sale_price != null);
       return {
         date,
+        sale: f ? Number(f.sale_price) : null,
+        repurchase: f ? Number(f.repurchase_price) : null,
+        units: f ? Number(f.units_outstanding) : null,
+        fundSize: f ? Number(f.fund_size) : null,
         close: base.close == null ? null : Number(base.close),
         source: wc[0]?.source ?? rs[0].source,
         volume: wv[0] ? Number(wv[0].volume) : null,
@@ -379,8 +400,18 @@ export default function StockDetail() {
     const ret = first && last && first.closeAdj
       ? (100 * (last.closeAdj - first.closeAdj)) / first.closeAdj : null;
 
+    const fundDays = days.filter((d) => d.sale != null);
+    const lastFund = fundDays[fundDays.length - 1] ?? null;
+    const firstFund = fundDays[0] ?? null;
+
     return {
       days, recon, exchangeDays, longest,
+      isFund: fundDays.length > 0,
+      lastFund, firstFund,
+      spread: lastFund && lastFund.sale > 0
+        ? (100 * (lastFund.sale - lastFund.repurchase)) / lastFund.sale : null,
+      unitsChange: firstFund && lastFund && firstFund.units
+        ? (100 * (lastFund.units - firstFund.units)) / firstFund.units : null,
       pctTraded: withVol.length ? (100 * traded.length) / withVol.length : null,
       totalVolume: withVol.reduce((t, d) => t + d.volume, 0),
       first, last, ret,
@@ -467,11 +498,22 @@ export default function StockDetail() {
             <div className="relative">
               <select value={symbol} onChange={(e) => setSymbol(e.target.value)}
                 className="appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none">
-                {universe.map((u) => (
-                  <option key={u.symbol} value={u.symbol}>
-                    {u.symbol} · {Number(u.pct_days_traded).toFixed(0)}% traded
-                  </option>
-                ))}
+                {["equity", "etf", "fund"].map((k) => {
+                  const group = universe.filter((u) => u.kind === k);
+                  if (!group.length) return null;
+                  return (
+                    <optgroup key={k} label={KIND_LABEL[k]}>
+                      {group.map((u) => (
+                        <option key={u.symbol} value={u.symbol}>
+                          {u.symbol}
+                          {u.pct_days_traded != null
+                            ? ` · ${Number(u.pct_days_traded).toFixed(0)}% traded`
+                            : u.name ? ` · ${u.name}` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -501,15 +543,35 @@ export default function StockDetail() {
               <Stat label="Return in range" value={pct(model.ret)}
                 tone={model.ret >= 0 ? "good" : "bad"}
                 sub={`${prettyDate(model.first.date)} → ${prettyDate(model.last.date)}`} />
-              <Stat label="Days traded"
-                value={model.pctTraded == null ? "—" : `${model.pctTraded.toFixed(0)}%`}
-                tone={model.pctTraded >= 55 ? "good" : model.pctTraded >= 25 ? "warn" : "bad"}
-                sub={`${nf.format(model.days.length)} trading days in range`} />
-              <Stat label="Longest gap" value={`${model.longest}d`}
-                tone={model.longest > 60 ? "bad" : model.longest > 21 ? "warn" : "default"}
-                sub="consecutive days without a trade" />
-              <Stat label="Exchange-backed" value={model.exchangeDays}
-                sub="days with a DSE market report" />
+              {model.isFund ? (
+                <>
+                  <Stat label="Round trip cost"
+                    value={model.spread == null ? "—"
+                      : model.spread === 0 ? "free" : `−${model.spread.toFixed(2)}%`}
+                    tone={model.spread >= 1.5 ? "bad" : model.spread > 0 ? "warn" : "good"}
+                    sub="buying and selling the same day" />
+                  <Stat label="Units outstanding"
+                    value={model.lastFund ? compact(model.lastFund.units) : "—"}
+                    sub={model.unitsChange == null ? "in issue"
+                      : `${pct(model.unitsChange)} across the range`}
+                    tone={model.unitsChange > 0 ? "good" : model.unitsChange < 0 ? "warn" : "default"} />
+                  <Stat label="Fund size"
+                    value={model.lastFund ? "TZS " + compact(model.lastFund.fundSize) : "—"}
+                    sub={`${nf.format(model.days.length)} valuations stored`} />
+                </>
+              ) : (
+                <>
+                  <Stat label="Days traded"
+                    value={model.pctTraded == null ? "—" : `${model.pctTraded.toFixed(0)}%`}
+                    tone={model.pctTraded >= 55 ? "good" : model.pctTraded >= 25 ? "warn" : "bad"}
+                    sub={`${nf.format(model.days.length)} trading days in range`} />
+                  <Stat label="Longest gap" value={`${model.longest}d`}
+                    tone={model.longest > 60 ? "bad" : model.longest > 21 ? "warn" : "default"}
+                    sub="consecutive days without a trade" />
+                  <Stat label="Exchange-backed" value={model.exchangeDays}
+                    sub="days with a DSE market report" />
+                </>
+              )}
             </div>
 
             <Panel
@@ -557,14 +619,64 @@ export default function StockDetail() {
             </Panel>
 
             <Panel title="Where each day came from"
-              hint="One block per run of trading days. Exchange days are the authoritative ones.">
+              hint={model.isFund
+                ? "Unit trust valuations come from the UTT AMIS NAV table."
+                : "One block per run of trading days. Exchange days are the authoritative ones."}>
               <ProvenanceStrip days={model.days} />
             </Panel>
 
+            {model.isFund ? (
+              <Panel title="Buying and selling"
+                hint="A unit trust has no market price — you transact with the manager at these two prices.">
+                <div className="p-4">
+                  {model.lastFund && (
+                    <div className="flex items-stretch gap-0 border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="flex-1 p-3.5 bg-gray-50">
+                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                          You buy at
+                        </div>
+                        <div className="text-[19px] font-extrabold tabular-nums mt-1">
+                          {Number(model.lastFund.sale).toLocaleString(undefined,
+                            { minimumFractionDigits: 4 })}
+                        </div>
+                      </div>
+                      <div className="flex-1 p-3.5 bg-gray-50 border-x border-gray-200">
+                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                          You sell at
+                        </div>
+                        <div className="text-[19px] font-extrabold tabular-nums mt-1">
+                          {Number(model.lastFund.repurchase).toLocaleString(undefined,
+                            { minimumFractionDigits: 4 })}
+                        </div>
+                      </div>
+                      <div className={`flex-1 p-3.5 ${
+                        model.spread >= 1.5 ? "bg-red-50" : model.spread > 0 ? "bg-amber-50" : "bg-green-50"}`}>
+                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                          Immediate cost
+                        </div>
+                        <div className={`text-[19px] font-extrabold tabular-nums mt-1 ${
+                          model.spread >= 1.5 ? "text-red-600"
+                            : model.spread > 0 ? "text-amber-600" : "text-green-600"}`}>
+                          {model.spread === 0 ? "none" : `−${model.spread.toFixed(2)}%`}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[10.5px] text-gray-500 leading-relaxed mt-3">
+                    {model.spread > 0
+                      ? `Put in 1,000,000 and sell the same day and you would get back about ` +
+                        `TZS ${nf.format(Math.round(1000000 * (1 - model.spread / 100)))}. ` +
+                        `The fund has to gain that much before you are level.`
+                      : "No spread on this fund — you buy and sell at the same price."}
+                  </p>
+                </div>
+              </Panel>
+            ) : (
             <Panel title="When it didn't trade"
               hint="Gaps, not averages — this is what an exit actually faces.">
               <DrySpellStrip days={model.days} />
             </Panel>
+            )}
 
             <Panel title="Sources disagreed"
               hint="A close outside the exchange's range for that day is a mis-dated row or an unrecorded action.">
