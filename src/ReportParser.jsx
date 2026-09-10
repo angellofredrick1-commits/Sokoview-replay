@@ -132,48 +132,64 @@ function parseUttDate(tok) {
 }
 
 /**
- * Rows arrive as a flat run of lines when the table is copied out of the page.
- * Anchor on the scheme name, then take the next five numbers:
- *   net asset value, units outstanding, NAV/unit, sale price, repurchase price
- * followed by the valuation date.
+ * Copying an HTML table can collapse every cell onto one line, and sometimes
+ * strips the whitespace between them entirely — the Bond Fund row arrives as
+ * "123.8623123.8623123.8623" with no separators.
+ *
+ * So rather than reading line by line, anchor on each scheme name and pull the
+ * next five numbers out of the text that follows it. Every value in this table
+ * carries exactly four decimals, which makes them unambiguous to extract even
+ * when they are run together.
  */
+const FOUR_DP = /\d[\d,]*\.\d{4}/g;
+const DATE_RE = /\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/;
+
 function parseUtt(text) {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const upper = text.toUpperCase();
+  const found = [];
+
+  // locate each scheme, longest name first so "WEKEZA MAISHA FUND" wins over
+  // any shorter partial match
+  Object.keys(FUNDS)
+    .sort((a, b) => b.length - a.length)
+    .forEach((name) => {
+      const at = upper.indexOf(name);
+      if (at >= 0 && !found.some((f) => f.sym === FUNDS[name])) {
+        found.push({ sym: FUNDS[name], name, at, end: at + name.length });
+      }
+    });
+  found.sort((a, b) => a.at - b.at);
+
   const out = [];
   let reportDate = null, ambiguous = false, rawDate = null;
 
-  for (let i = 0; i < lines.length; i++) {
-    const name = lines[i].toUpperCase().replace(/^\d+[\s.)]*/, "").trim();
-    const sym = FUNDS[name];
-    if (!sym || out.some((r) => r.symbol === sym)) continue;
+  found.forEach((f, i) => {
+    const stop = i + 1 < found.length ? found[i + 1].at : text.length;
+    const chunk = text.slice(f.end, stop);
 
-    const nums = [];
-    let j = i + 1, dateTok = null;
-    while (j < lines.length && nums.length < 5) {
-      const v = num(lines[j]);
-      if (v != null) nums.push(v);
-      else if (/\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(lines[j])) { dateTok = lines[j]; break; }
-      else if (FUNDS[lines[j].toUpperCase().replace(/^\d+[\s.)]*/, "").trim()]) break;
-      j++;
-    }
-    // the date usually follows the five numbers
-    if (!dateTok) {
-      for (let k = j; k < Math.min(j + 3, lines.length); k++)
-        if (/\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(lines[k])) { dateTok = lines[k]; break; }
-    }
-    if (nums.length < 5) continue;
+    FOUR_DP.lastIndex = 0;
+    const nums = (chunk.match(FOUR_DP) || []).map((t) => Number(t.replace(/,/g, "")));
+    if (nums.length < 5) return;
 
     const [fundSize, units, nav, sale, repurchase] = nums;
-    if (dateTok && !reportDate) {
-      const d = parseUttDate(dateTok);
-      if (d) { reportDate = d.iso; ambiguous = d.ambiguous; rawDate = d.raw; }
+    if (!(nav > 0)) return;
+
+    if (!reportDate) {
+      const d = chunk.match(DATE_RE);
+      if (d) {
+        const parsed = parseUttDate(d[0]);
+        if (parsed) { reportDate = parsed.iso; ambiguous = parsed.ambiguous; rawDate = parsed.raw; }
+      }
     }
+
     out.push({
-      symbol: sym, name: name.replace(/\b\w/g, (c) => c.toUpperCase()),
+      symbol: f.sym,
+      name: f.name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()),
       fundSize, units, nav, sale, repurchase,
       spread: sale > 0 ? (100 * (sale - repurchase)) / sale : 0,
     });
-  }
+  });
+
   return { rows: out, reportDate, ambiguous, rawDate };
 }
 
@@ -311,9 +327,17 @@ export default function ReportParser() {
         {parsed && !parsed.date && (
           <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="text-[11.5px] text-amber-800">
-              <strong>No report date found.</strong> The parser looks for a line like
-              “MARKET REPORT ON 24TH AUGUST 2026”. Include the header when you copy.
+            <div className="text-[11.5px] text-amber-800 leading-relaxed">
+              <strong>No date found.</strong>{" "}
+              {mode === "utt"
+                ? "Include the Date Valued column when you copy, or set the date here."
+                : "The parser looks for a line like “MARKET REPORT ON 24TH AUGUST 2026”. Include the header when you copy."}
+              <div className="mt-2 flex items-center gap-2">
+                <input type="date" value={dateOverride}
+                  onChange={(e) => setDateOverride(e.target.value)}
+                  className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <span className="text-[10.5px] text-amber-700">set it manually</span>
+              </div>
             </div>
           </div>
         )}
