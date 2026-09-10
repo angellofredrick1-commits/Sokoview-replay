@@ -369,19 +369,57 @@ export default function CaptureMonitor() {
     };
   }, [raw, actions]);
 
+  // Which asset kinds exist at all — not just on the single most recent date.
+  // Equities capture nightly while fund NAVs arrive on their own schedule, so
+  // keying this off one global "latest" hides whichever kind updated last.
   const kindsPresent = useMemo(() => {
-    if (!model) return [];
-    const set = new Set(model.today.map((r) => kindOf[r.symbol] || "equity"));
+    if (!raw.length) return [];
+    const set = new Set(raw.map((r) => kindOf[r.symbol] || "equity"));
     return ["equity", "etf", "fund"].filter((k) => set.has(k));
-  }, [model, kindOf]);
+  }, [raw, kindOf]);
+
+  // Each kind's own latest date.
+  const latestForKind = useMemo(() => {
+    const m = {};
+    raw.forEach((r) => {
+      const k = kindOf[r.symbol] || "equity";
+      if (!m[k] || r.trade_date > m[k]) m[k] = r.trade_date;
+    });
+    return m;
+  }, [raw, kindOf]);
 
   useEffect(() => {
     if (kindsPresent.length && !kindsPresent.includes(assetKind)) setAssetKind(kindsPresent[0]);
   }, [kindsPresent, assetKind]);
 
+  const kindDate = latestForKind[assetKind] ?? model?.latest ?? null;
+
   const todaySorted = useMemo(() => {
-    if (!model) return [];
-    const rows = model.today.filter((r) => (kindOf[r.symbol] || "equity") === assetKind);
+    if (!raw.length || !kindDate) return [];
+    const onDate = raw.filter((r) => r.trade_date === kindDate
+      && (kindOf[r.symbol] || "equity") === assetKind);
+    const RANK = { dse_report: 1, african_markets: 2, utt_amis: 2, sokoview_quote: 3 };
+    const rk = (r) => RANK[r.source] ?? 9;
+    const syms = [...new Set(onDate.map((r) => r.symbol))];
+    const rows = syms.map((sym) => {
+      const rs = onDate.filter((r) => r.symbol === sym);
+      const wc = rs.filter((r) => r.close != null).sort((a, b) => rk(a) - rk(b));
+      const wv = rs.filter((r) => r.volume != null).sort((a, b) => rk(a) - rk(b));
+      const f = rs.find((r) => r.sale_price != null);
+      const base = wc[0] ?? rs[0];
+      const v = wv[0];
+      return {
+        ...base,
+        sale_price: f?.sale_price ?? null,
+        repurchase_price: f?.repurchase_price ?? null,
+        units_outstanding: f?.units_outstanding ?? null,
+        fund_size: f?.fund_size ?? null,
+        volume: v ? v.volume : null,
+        volume_source: v ? v.source : null,
+        traded: v ? Number(v.volume) > 0 : base.traded,
+        traded_basis: v ? "volume" : "flag",
+      };
+    });
     const val = (r) => {
       if (sortBy === "volume") return r.volume == null ? -1 : Number(r.volume);
       if (sortBy === "move") return Math.abs(Number(r.pct_change ?? 0));
@@ -391,7 +429,7 @@ export default function CaptureMonitor() {
     return sortBy === "symbol"
       ? rows.sort((a, b) => a.symbol.localeCompare(b.symbol))
       : rows.sort((a, b) => val(b) - val(a));
-  }, [model, sortBy, assetKind, kindOf]);
+  }, [raw, sortBy, assetKind, kindOf, kindDate]);
 
   /* ---- config gate ---- */
   if (showCfg || !cfg.url || !cfg.key) {
@@ -598,7 +636,7 @@ export default function CaptureMonitor() {
 
             {/* ---------- today's market ---------- */}
             <Section
-              title={`Market on ${prettyDate(model.latest)}`}
+              title={`${KIND_LABEL[assetKind]} on ${prettyDate(kindDate)}`}
               hint={
                 assetKind === "fund"
                   ? "Buy at the sale price, sell at the repurchase price. The gap is what a same-day round trip costs."
@@ -633,7 +671,9 @@ export default function CaptureMonitor() {
               {kindsPresent.length > 1 && (
                 <div className="px-4 pt-3 flex gap-1.5">
                   {kindsPresent.map((k) => {
-                    const n = model.today.filter((r) => (kindOf[r.symbol] || "equity") === k).length;
+                    const d = latestForKind[k];
+                    const n = new Set(raw.filter((r) => r.trade_date === d
+                      && (kindOf[r.symbol] || "equity") === k).map((r) => r.symbol)).size;
                     return (
                       <button key={k} onClick={() => setAssetKind(k)}
                         className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border ${

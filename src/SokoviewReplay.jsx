@@ -61,29 +61,54 @@ async function sbFetch(path, cfg) {
 
 /** Which symbols are liquid enough to simulate, and how badly they gap. */
 async function fetchUniverse(cfg) {
-  const rows = await sbFetch(
-    "liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell,first_day,last_day" +
-    "&order=pct_days_traded.desc", cfg);
-  return rows.map((r) => ({
-    symbol: r.symbol,
-    pctTraded: Number(r.pct_days_traded ?? 0),
-    days: Number(r.days ?? 0),
-    dry: Number(r.longest_dry_spell ?? 0),
-    first: r.first_day, last: r.last_day,
-  }));
+  // Funds never appear in liquidity_profile — they have no volume — so build
+  // from the instrument table and attach liquidity where it exists.
+  const [inst, liq] = await Promise.all([
+    sbFetch("instrument?select=symbol,name,kind&order=symbol.asc", cfg),
+    sbFetch("liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell,first_day,last_day",
+      cfg).catch(() => []),
+  ]);
+  const byLiq = {};
+  liq.forEach((l) => { byLiq[l.symbol] = l; });
+
+  return inst
+    .map((i) => {
+      const l = byLiq[i.symbol];
+      return {
+        symbol: i.symbol,
+        name: i.name,
+        kind: i.kind || "equity",
+        pctTraded: l ? Number(l.pct_days_traded ?? 0) : null,
+        days: l ? Number(l.days ?? 0) : null,
+        dry: l ? Number(l.longest_dry_spell ?? 0) : null,
+        first: l?.first_day ?? null,
+        last: l?.last_day ?? null,
+      };
+    })
+    // funds first — they are the ones a monthly plan can actually be run on
+    .sort((a, b) => {
+      const rank = (x) => (x.kind === "fund" ? 0 : 1);
+      return rank(a) - rank(b)
+        || (b.pctTraded ?? -1) - (a.pctTraded ?? -1)
+        || a.symbol.localeCompare(b.symbol);
+    });
 }
 
 /**
  * PostgREST caps a response at 1000 rows, so ten years of daily bars needs
  * paging through Range headers.
  */
-async function fetchSeries({ symbol, from, cfg }) {
+async function fetchSeries({ symbol, from, cfg, kind }) {
   const PAGE = 1000;
+  const isFund = kind === "fund";
+  const table = isFund
+    ? `fund_pricing?select=trade_date,nav_per_unit,sale_price,repurchase_price`
+    : `price_adjusted?select=trade_date,close_adj,close_raw,volume`;
+
   const out = [];
   for (let offset = 0; ; offset += PAGE) {
     const url =
-      `${cfg.url.replace(/\/$/, "")}/rest/v1/price_adjusted` +
-      `?select=trade_date,close_adj,close_raw,volume` +
+      `${cfg.url.replace(/\/$/, "")}/rest/v1/${table}` +
       `&symbol=eq.${encodeURIComponent(symbol)}` +
       (from ? `&trade_date=gte.${from}` : "") +
       `&order=trade_date.asc`;
@@ -97,15 +122,27 @@ async function fetchSeries({ symbol, from, cfg }) {
     const page = await res.json();
     out.push(...page);
     if (page.length < PAGE) break;
-    if (offset > 40000) break; // guard
+    if (offset > 40000) break;
   }
+
   return out
-    .map((r) => ({
-      date: String(r.trade_date).slice(0, 10),
-      close: Number(r.close_adj ?? r.close_raw),
-      volume: r.volume == null ? null : Number(r.volume),
-      div: 0,
-    }))
+    .map((r) => {
+      const date = String(r.trade_date).slice(0, 10);
+      if (isFund) {
+        const nav = Number(r.nav_per_unit);
+        return {
+          date, close: nav, div: 0, volume: null,
+          buy: Number(r.sale_price) || nav,
+          sell: Number(r.repurchase_price) || nav,
+        };
+      }
+      return {
+        date,
+        close: Number(r.close_adj ?? r.close_raw),
+        volume: r.volume == null ? null : Number(r.volume),
+        div: 0, buy: null, sell: null,
+      };
+    })
     .filter((b) => b.date && isFinite(b.close) && b.close > 0);
 }
 
@@ -269,13 +306,19 @@ function simulate(bars, cfg) {
       if (reinvest) cash += d; else divPaidOut += d;
     }
 
-    const unit = b.close * (1 + feePct);
-    if (cash >= unit) {
-      const qty = whole ? Math.floor(cash / unit) : cash / unit;
-      if (qty > 0) { shares += qty; cash -= qty * unit; basis += qty * unit; }
+    // A unit trust has no market price: you buy from the manager at the sale
+    // price and sell back at the repurchase price. Where a bar carries those,
+    // use them and skip brokerage — the spread IS the cost. Equities fall back
+    // to close plus commission.
+    const buyAt = b.buy != null ? b.buy : b.close * (1 + feePct);
+    const sellAt = b.sell != null ? b.sell : b.close;
+
+    if (cash >= buyAt) {
+      const qty = whole ? Math.floor(cash / buyAt) : cash / buyAt;
+      if (qty > 0) { shares += qty; cash -= qty * buyAt; basis += qty * buyAt; }
     }
 
-    const value = shares * b.close + cash + divPaidOut;
+    const value = shares * sellAt + cash + divPaidOut;
     peak = Math.max(peak, value);
     path.push({
       date: b.date, price: b.close, shares, invested, cash, value,
@@ -539,8 +582,29 @@ function Stat({ label, value, sub, tone = "default", big }) {
    5. LEG PANEL
    ==========================================================================*/
 
-function LiquidityNote({ liq }) {
-  if (!liq) return null;
+function LiquidityNote({ liq, spread }) {
+  // A unit trust is always dealable, so a liquidity warning would be wrong.
+  // What costs you on a fund is the entry/exit spread.
+  if (liq?.kind === "fund") {
+    if (spread == null) return null;
+    if (spread <= 0) {
+      return (
+        <div className="mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border
+                        bg-green-50 border-green-200 text-green-700">
+          No spread — you buy and sell at the same price.
+        </div>
+      );
+    }
+    return (
+      <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
+        spread >= 1.5 ? "bg-amber-50 border-amber-200 text-amber-700"
+                      : "bg-gray-50 border-gray-200 text-gray-600"}`}>
+        {spread.toFixed(2)}% exit load. The replay buys at the sale price and values at the
+        repurchase price, so this is already priced in.
+      </div>
+    );
+  }
+  if (!liq || liq.pctTraded == null) return null;
   const bad = liq.pctTraded < 25 || liq.dry > 60;
   const warn = liq.pctTraded < 55 || liq.dry > 21;
   if (!bad && !warn) return null;
@@ -556,7 +620,7 @@ function LiquidityNote({ liq }) {
   );
 }
 
-function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbols, lockLump, lockedValue, liq }) {
+function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbols, groupedSymbols, lockLump, lockedValue, liq, spread }) {
   const dim = !enabled;
   return (
     <div
@@ -590,16 +654,31 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
               onChange={(e) => set({ symbol: e.target.value })}
               className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-neutral-950 outline-none"
             >
-              {symbols.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                  {UNIVERSE[s] ? ` · ${UNIVERSE[s].name}` : ""}
-                </option>
-              ))}
+              {groupedSymbols
+                ? groupedSymbols.map((g) => (
+                    <optgroup key={g.kind} label={g.label}>
+                      {g.items.map((u) => (
+                        <option key={u.symbol} value={u.symbol}>
+                          {u.symbol}
+                          {u.kind === "fund"
+                            ? ` · ${u.name}`
+                            : u.pctTraded != null
+                            ? ` · ${u.pctTraded.toFixed(0)}% traded`
+                            : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                : symbols.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                      {UNIVERSE[s] ? ` · ${UNIVERSE[s].name}` : ""}
+                    </option>
+                  ))}
             </select>
             <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <LiquidityNote liq={liq} />
+          <LiquidityNote liq={liq} spread={spread} />
         </div>
 
         <div className="mb-3">
@@ -706,11 +785,27 @@ export default function SokoviewReplay() {
     ? universe.map((u) => u.symbol)
     : Object.keys(UNIVERSE);
 
+  const groupedSymbols = useMemo(() => {
+    if (source !== "live" || !universe.length) return null;
+    const LABEL = { fund: "Unit trusts", equity: "Equities", etf: "ETFs" };
+    return ["fund", "equity", "etf"]
+      .map((kind) => ({ kind, label: LABEL[kind], items: universe.filter((u) => u.kind === kind) }))
+      .filter((g) => g.items.length);
+  }, [source, universe]);
+
   const liqOf = useMemo(() => {
     const m = {};
     universe.forEach((u) => { m[u.symbol] = u; });
     return m;
   }, [universe]);
+
+  const spreadOf = useCallback((sym) => {
+    const bars = liveData[sym];
+    if (!bars?.length) return null;
+    const b = bars[bars.length - 1];
+    if (b.buy == null || b.sell == null || !(b.buy > 0)) return null;
+    return (100 * (b.buy - b.sell)) / b.buy;
+  }, [liveData]);
 
   const getBars = useCallback(
     (sym) => {
@@ -876,7 +971,13 @@ export default function SokoviewReplay() {
     setConn({ state: "loading", msg: "" });
     try {
       const results = await Promise.all(
-        need.map(async (sym) => [sym, await fetchSeries({ symbol: sym, cfg: sbCfg })])
+        need.map(async (sym) => [
+          sym,
+          await fetchSeries({
+            symbol: sym, cfg: sbCfg,
+            kind: universe.find((u) => u.symbol === sym)?.kind ?? "equity",
+          }),
+        ])
       );
       setLiveData((d) => {
         const next = { ...d };
@@ -893,7 +994,7 @@ export default function SokoviewReplay() {
     } catch (e) {
       setConn({ state: "err", msg: e.message });
     }
-  }, [liveData]);
+  }, [liveData, universe]);
 
   // Auto-load whenever a leg's symbol changes.
   useEffect(() => {
@@ -1245,7 +1346,9 @@ export default function SokoviewReplay() {
                 symbols={symbols}
                 lockLump={bOn && matchCapital && legA.strategy === "lump" && legB.strategy === "dca"}
                 lockedValue={legB.perPeriod * periodsB}
+                groupedSymbols={groupedSymbols}
                 liq={liqOf[legA.symbol]}
+                spread={spreadOf(legA.symbol)}
               />
               <LegPanel
                 leg={legB}
@@ -1258,7 +1361,9 @@ export default function SokoviewReplay() {
                 symbols={symbols}
                 lockLump={bOn && matchCapital && legB.strategy === "lump" && legA.strategy === "dca"}
                 lockedValue={legA.perPeriod * periodsA}
+                groupedSymbols={groupedSymbols}
                 liq={liqOf[legB.symbol]}
+                spread={spreadOf(legB.symbol)}
               />
 
               <div className="rounded-xl border border-gray-300 p-3.5 space-y-3">
