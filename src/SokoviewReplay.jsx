@@ -366,6 +366,9 @@ const compact = (n) => {
 };
 const pct = (n, d = 1) =>
   n == null || !isFinite(n) ? "—" : (n >= 0 ? "+" : "") + (n * 100).toFixed(d) + "%";
+const monthLabel = (d) =>
+  d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB",
+      { month: "short", year: "numeric" }) : "—";
 const prettyDate = (d) =>
   new Date(d + "T00:00:00").toLocaleDateString("en-GB", {
     day: "numeric", month: "short", year: "numeric",
@@ -421,36 +424,70 @@ function StockMark({ symbol, size = 20, ring = false }) {
  * SVG <image> cannot fail over to a monogram the way <img> can, so unmapped
  * symbols get the monogram drawn directly.
  */
-function makeLeadMarker(symbol, color, lastIndex, size = 30) {
+function makeLeadMarker(symbol, color, lastIndex, opts = {}) {
+  const { size = 34, label, ticker, value, ret, rank, winner } = opts;
   const url = logoUrl(symbol);
-  const id = `clip-${symbol.replace(/[^A-Za-z0-9]/g, "")}`;
+  const id = `clip-${symbol.replace(/[^A-Za-z0-9]/g, "")}-${rank ?? 0}`;
+
   return (props) => {
     const { cx, cy, index } = props;
     if (index !== lastIndex || cx == null || cy == null) return null;
     const r = size / 2;
+    const x = cx + r + 14;          // label sits to the right of the marker
+
     return (
       <g style={{ pointerEvents: "none" }}>
-        <circle cx={cx} cy={cy} r={r + 2.5} fill="#fff" />
-        <circle cx={cx} cy={cy} r={r + 2.5} fill="none" stroke={color} strokeWidth={2} />
+        {/* the mark */}
+        <circle cx={cx} cy={cy} r={r + 3} fill="#fff" />
+        <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={color} strokeWidth={2.5} />
         {url ? (
           <>
-            <clipPath id={id}>
-              <circle cx={cx} cy={cy} r={r} />
-            </clipPath>
-            <image
-              href={url} x={cx - r} y={cy - r} width={size} height={size}
-              clipPath={`url(#${id})`} preserveAspectRatio="xMidYMid meet"
-            />
+            <clipPath id={id}><circle cx={cx} cy={cy} r={r} /></clipPath>
+            <image href={url} x={cx - r} y={cy - r} width={size} height={size}
+              clipPath={`url(#${id})`} preserveAspectRatio="xMidYMid meet" />
           </>
         ) : (
           <>
             <circle cx={cx} cy={cy} r={r} fill={monogramColor(symbol)} />
             <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-              fontSize={size * 0.34} fontWeight="800" fill="#fff">
+              fontSize={size * 0.32} fontWeight="800" fill="#fff">
               {monogramText(symbol)}
             </text>
           </>
         )}
+
+        {/* rank badge */}
+        {rank != null && (
+          <>
+            <circle cx={cx + r - 1} cy={cy + r - 1} r={8} fill={color} stroke="#fff" strokeWidth={2} />
+            <text x={cx + r - 1} y={cy + r - 1} textAnchor="middle" dominantBaseline="central"
+              fontSize={9} fontWeight="800" fill="#fff">{rank}</text>
+          </>
+        )}
+
+        {/* name · ticker */}
+        <text x={x} y={cy - 20} fontSize={12.5} fontWeight="800" fill={color}>
+          {label}
+          {winner && <tspan fontSize={12}> ♛</tspan>}
+        </text>
+        <text x={x + (label?.length ?? 0) * 7.4 + (winner ? 14 : 6)} y={cy - 20}
+          fontSize={9.5} fontWeight="700" fill="#9ca3af" letterSpacing="0.06em">
+          {ticker}
+        </text>
+
+        {/* value pill */}
+        <rect x={x} y={cy - 13} rx={6} height={26}
+          width={Math.max(96, String(value).length * 8.6 + 20)} fill="#0a0a0a" />
+        <text x={x + 10} y={cy} dominantBaseline="central"
+          fontSize={13} fontWeight="800" fill="#fff" className="mono">
+          {value}
+        </text>
+
+        {/* return */}
+        <text x={x} y={cy + 27} fontSize={11.5} fontWeight="800"
+          fill={ret != null && ret < 0 ? "#dc2626" : "#16a34a"}>
+          {ret == null ? "" : (ret >= 0 ? "+" : "") + ret.toFixed(1) + "%"}
+        </text>
       </g>
     );
   };
@@ -928,15 +965,95 @@ export default function SokoviewReplay() {
     return out;
   }, [simA, simB, t, chartMode]);
 
+  /* ---- presentation model: legs, ranking, headline ---- */
+  const nameOfSym = useCallback((sym) => {
+    const u = universe.find((x) => x.symbol === sym);
+    return u?.name || UNIVERSE[sym]?.name || sym;
+  }, [universe]);
+
+  const legs = useMemo(() => {
+    const out = [{ key: "A", leg: legA, color: A_COLOR, m: mA, name: nameOfSym(legA.symbol) }];
+    if (bOn) out.push({ key: "B", leg: legB, color: B_COLOR, m: mB, name: nameOfSym(legB.symbol) });
+    return out;
+  }, [legA, legB, bOn, mA, mB, nameOfSym]);
+
+  const ranked = useMemo(
+    () => [...legs].sort((a, b) => (b.m?.value ?? 0) - (a.m?.value ?? 0)),
+    [legs]
+  );
+
+  /**
+   * The headline reads as a sentence, so it has to adapt: same stock two ways,
+   * two stocks the same way, or a single plan. Building it as parts lets the
+   * amounts and names carry their own styling without splitting the sentence.
+   */
+  const headline = useMemo(() => {
+    const startLabel = monthLabel(barsA?.[0]?.date ?? `${startYear}-01-01`);
+    const amt = (L) =>
+      L.leg.strategy === "lump"
+        ? `TZS ${compact(L.m?.invested ?? 0)} once`
+        : `TZS ${nf.format(L.leg.perPeriod)}/${L.leg.freq.replace("ly", "")}`;
+
+    if (legs.length === 1) {
+      const L = legs[0];
+      return [
+        { kind: "plain", text: "You put " },
+        { kind: "amount", text: amt(L), color: L.color },
+        { kind: "plain", text: " into " },
+        { kind: "name", text: L.name },
+        { kind: "plain", text: " starting " },
+        { kind: "muted", text: startLabel },
+      ];
+    }
+    const [A, B] = legs;
+    const sameStock = A.leg.symbol === B.leg.symbol;
+    if (sameStock) {
+      return [
+        { kind: "plain", text: "You put " },
+        { kind: "amount", text: amt(A), color: A.color },
+        { kind: "plain", text: " vs " },
+        { kind: "amount", text: amt(B), color: B.color },
+        { kind: "plain", text: " into " },
+        { kind: "name", text: A.name },
+        { kind: "plain", text: " starting " },
+        { kind: "muted", text: startLabel },
+      ];
+    }
+    return [
+      { kind: "plain", text: "You put " },
+      { kind: "amount", text: amt(A), color: A.color },
+      { kind: "plain", text: " into each of " },
+      { kind: "name", text: A.name },
+      { kind: "plain", text: " and " },
+      { kind: "name", text: B.name },
+      { kind: "plain", text: " in " },
+      { kind: "muted", text: startLabel },
+    ];
+  }, [legs, barsA, startYear]);
+
   /* ---- travelling logo markers ---- */
   const lastIdx = chartData.length - 1;
+  const rankOf = useCallback(
+    (key) => (ranked.length > 1 ? ranked.findIndex((L) => L.key === key) + 1 : null),
+    [ranked]
+  );
   const leadA = useMemo(
-    () => makeLeadMarker(legA.symbol, A_COLOR, lastIdx),
-    [legA.symbol, lastIdx]
+    () => makeLeadMarker(legA.symbol, A_COLOR, lastIdx, {
+      label: nameOfSym(legA.symbol), ticker: legA.symbol,
+      value: chartMode === "roi" ? pct(mA?.roi) : tzs(mA?.value),
+      ret: mA?.roi == null ? null : mA.roi * 100,
+      rank: rankOf("A"), winner: ranked[0]?.key === "A" && ranked.length > 1,
+    }),
+    [legA.symbol, lastIdx, mA, chartMode, ranked, nameOfSym, rankOf]
   );
   const leadB = useMemo(
-    () => makeLeadMarker(legB.symbol, B_COLOR, lastIdx),
-    [legB.symbol, lastIdx]
+    () => makeLeadMarker(legB.symbol, B_COLOR, lastIdx, {
+      label: nameOfSym(legB.symbol), ticker: legB.symbol,
+      value: chartMode === "roi" ? pct(mB?.roi) : tzs(mB?.value),
+      ret: mB?.roi == null ? null : mB.roi * 100,
+      rank: rankOf("B"), winner: ranked[0]?.key === "B" && ranked.length > 1,
+    }),
+    [legB.symbol, lastIdx, mB, chartMode, ranked, nameOfSym, rankOf]
   );
 
   /* ---- presets ---- */
@@ -1015,11 +1132,6 @@ export default function SokoviewReplay() {
   };
 
   /* ---- derived headline ---- */
-  const leader = mA && mB ? (mA.value >= mB.value ? "A" : "B") : null;
-  const gap = mA && mB ? Math.abs(mA.value - mB.value) : 0;
-  const total = mA && mB ? mA.value + mB.value : 0;
-  const shareA = total > 0 ? (mA.value / total) * 100 : 50;
-
   const labelFor = (leg, m) =>
     `${leg.symbol} · ${leg.strategy === "lump" ? "one-time" : `${leg.freq} top-up`}`;
 
@@ -1029,14 +1141,17 @@ export default function SokoviewReplay() {
     <div className="w-full min-h-screen bg-white text-neutral-950 antialiased">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
+        .serif { font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif; }
+        .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
         * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
         .dots { background-image: radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 20px 20px; }
         input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; }
-        input[type=range]::-webkit-slider-runnable-track{ height:4px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; margin-top:-6px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.3); cursor:pointer; }
+        input[type=range]::-webkit-slider-runnable-track{ height:5px; background:#e5e7eb; border-radius:99px; }
+        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:17px; height:17px; margin-top:-6px; border-radius:50%; background:#22c55e; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,.28); cursor:pointer; }
         input[type=range]::-moz-range-track{ height:4px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:#0a0a0a; border:3px solid #fff; cursor:pointer; }
+        input[type=range]::-moz-range-thumb{ width:17px; height:17px; border-radius:50%; background:#22c55e; border:3px solid #fff; cursor:pointer; }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
       `}</style>
 
@@ -1156,11 +1271,10 @@ export default function SokoviewReplay() {
 
       <main className="max-w-6xl mx-auto px-5 py-6">
         {/* ---------- hero: the race ---------- */}
-        <section className="dots border border-gray-200 rounded-2xl p-5 mb-5 relative overflow-hidden">
-          <div
-            className="absolute -top-16 -right-16 w-80 h-80 rounded-full pointer-events-none"
-            style={{ background: "radial-gradient(circle, rgba(34,197,94,.14) 0%, transparent 68%)" }}
-          />
+        <section className="relative overflow-hidden mb-5 pt-2">
+          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[620px] h-[320px]
+                          rounded-full pointer-events-none"
+            style={{ background: "radial-gradient(circle, rgba(34,197,94,.11) 0%, transparent 70%)" }} />
           <div className="relative">
             {noData ? (
               <div className="py-10 text-center">
@@ -1171,113 +1285,179 @@ export default function SokoviewReplay() {
               </div>
             ) : (
               <>
-                <div className="flex items-start justify-between flex-wrap gap-4 mb-5">
-                  <div>
-                    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-green-600 mb-1.5">
-                      Replaying from {prettyDate(barsA[0].date)}
-                    </div>
-                    <div className="text-[34px] sm:text-[42px] font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums">
-                      {prettyDate(barsA[t]?.date ?? barsA[0].date)}
-                    </div>
-                    <div className="text-[11px] text-gray-500 font-semibold mt-1 tabular-nums">
-                      {legA.symbol} at {tzs(mA?.price)}
-                      {mB && legB.symbol !== legA.symbol && (
-                        <> · {legB.symbol} at {tzs(mB.price)}</>
-                      )}
-                    </div>
+                {/* ---- editorial headline ---- */}
+                <div className="text-center max-w-3xl mx-auto mb-6">
+                  <div className="inline-flex items-center gap-2 text-[9px] font-bold uppercase
+                                  tracking-[0.16em] text-gray-500 bg-white border border-gray-200
+                                  px-3 py-1.5 rounded-full mb-5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    Sokoview historical replay
                   </div>
 
-                  {mA && mB && (
-                    <div className="text-right">
-                      <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-1">
-                        Ahead by
+                  <h1 className="text-[30px] sm:text-[40px] font-extrabold tracking-[-0.035em]
+                                 leading-[1.04] text-neutral-950">
+                    {headline.map((part, i) =>
+                      part.kind === "amount" ? (
+                        <span key={i} style={{ color: part.color }}>{part.text}</span>
+                      ) : part.kind === "name" ? (
+                        <em key={i} className="serif not-italic" style={{ fontStyle: "italic" }}>
+                          {part.text}
+                        </em>
+                      ) : part.kind === "muted" ? (
+                        <span key={i} className="text-gray-400">{part.text}</span>
+                      ) : (
+                        <span key={i}>{part.text}</span>
+                      )
+                    )}
+                  </h1>
+
+                  {/* logo chips */}
+                  <div className="flex items-center justify-center gap-7 mt-5">
+                    {legs.map((L) => (
+                      <div key={L.key} className="flex items-center gap-2.5">
+                        <span className="rounded-full p-[3px]" style={{ boxShadow: `0 0 0 2.5px ${L.color}` }}>
+                          <StockMark symbol={L.leg.symbol} size={30} />
+                        </span>
+                        <div className="text-left leading-tight">
+                          <div className="text-[12.5px] font-extrabold" style={{ color: L.color }}>
+                            {L.name}
+                          </div>
+                          <div className="text-[9.5px] font-bold text-gray-400 tracking-[0.06em] mono">
+                            {L.leg.symbol}
+                          </div>
+                        </div>
                       </div>
-                      <div
-                        className="text-[26px] sm:text-[32px] font-extrabold leading-none tabular-nums tracking-tight"
-                        style={{ color: leader === "A" ? A_COLOR : B_COLOR }}
-                      >
-                        {compact(gap)}
-                      </div>
-                      <div className="text-[11px] font-bold text-gray-500 mt-1">
-                        {leader === "A" ? labelFor(legA) : labelFor(legB)}
-                      </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
 
-                {/* the race bar — signature element */}
-                {mA && mB && (
-                  <div className="mb-5">
-                    <div className="flex h-9 rounded-lg overflow-hidden border border-gray-200">
-                      <div
-                        className="flex items-center px-3 transition-all duration-100"
-                        style={{ width: `${Math.max(shareA, 8)}%`, background: A_COLOR }}
-                      >
-                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
-                          {compact(mA.value)}
-                        </span>
+                {/* ---- chart frame ---- */}
+                <div className="border border-gray-200 rounded-2xl bg-white px-5 pt-5 pb-3 mb-4">
+                  <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+                    <div>
+                      <div className="text-[26px] sm:text-[32px] font-extrabold tracking-[-0.03em]
+                                      leading-none tabular-nums">
+                        {monthLabel(barsA[t]?.date ?? barsA[0].date)}
                       </div>
-                      <div
-                        className="flex items-center justify-end px-3 flex-1 transition-all duration-100"
-                        style={{ background: B_COLOR }}
-                      >
-                        <span className="text-[11px] font-extrabold text-white tabular-nums whitespace-nowrap">
-                          {compact(mB.value)}
-                        </span>
+                      <div className="text-[11px] text-gray-500 font-semibold mt-1.5 tabular-nums">
+                        {legA.symbol} at {tzs(mA?.price)}
+                        {mB && legB.symbol !== legA.symbol && <> · {legB.symbol} at {tzs(mB.price)}</>}
                       </div>
                     </div>
-                    <div className="flex justify-between mt-1.5 text-[10.5px] font-bold">
-                      <span className="text-green-600 flex items-center gap-1.5">
-                        <StockMark symbol={legA.symbol} size={16} /> {labelFor(legA)}
-                      </span>
-                      <span className="text-neutral-900 flex items-center gap-1.5">
-                        {labelFor(legB)} <StockMark symbol={legB.symbol} size={16} />
-                      </span>
-                    </div>
+                    <Seg
+                      value={chartMode}
+                      onChange={setChartMode}
+                      options={[
+                        { v: "value", l: "Value" },
+                        { v: "roi", l: "Return %" },
+                        { v: "price", l: "Price" },
+                      ]}
+                    />
+                  </div>
+
+                  <div style={{ width: "100%", height: 330 }}>
+                    <ResponsiveContainer>
+                      <ComposedChart data={chartData} margin={{ top: 28, right: 186, bottom: 4, left: 0 }}>
+                        <CartesianGrid stroke="#f3f4f6" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={(d) => monthLabel(d)} minTickGap={90}
+                          tick={{ fontSize: 10.5, fill: "#9ca3af", fontWeight: 700 }}
+                          axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
+                          tick={{ fontSize: 10.5, fill: "#9ca3af", fontWeight: 700 }}
+                          axisLine={false} tickLine={false} width={54} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: 12, border: "1px solid #e5e7eb",
+                                          fontSize: 11, fontWeight: 700,
+                                          boxShadow: "0 4px 16px rgba(0,0,0,.08)" }}
+                          labelFormatter={prettyDate}
+                          formatter={(v, name) => [
+                            chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
+                            { aVal: labelFor(legA), bVal: labelFor(legB),
+                              aInv: "A money in", bInv: "B money in" }[name] ?? name,
+                          ]} />
+                        {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                        {chartMode === "value" && (
+                          <Line type="stepAfter" dataKey="aInv" stroke="#d1d5db" strokeWidth={1.5}
+                                strokeDasharray="4 4" dot={false} isAnimationActive={false} />
+                        )}
+                        {chartMode === "value" && bOn && (
+                          <Line type="stepAfter" dataKey="bInv" stroke="#e5e7eb" strokeWidth={1.5}
+                                strokeDasharray="4 4" dot={false} isAnimationActive={false} />
+                        )}
+                        <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.6}
+                              dot={leadA} activeDot={false} isAnimationActive={false} />
+                        {bOn && (
+                          <Line type="monotone" dataKey="bVal" stroke={B_COLOR} strokeWidth={2.6}
+                                dot={leadB} activeDot={false} isAnimationActive={false} />
+                        )}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="text-center text-[9px] font-bold tracking-[0.14em] text-gray-400
+                                  uppercase mono pt-1">
+                    Historical portfolio value · adjusted for splits
+                  </div>
+                </div>
+
+                {/* ---- ranked strip ---- */}
+                {legs.length > 1 && (
+                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                    {ranked.map((L, i) => (
+                      <div key={L.key}
+                        className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
+                          i === 0 ? "border-green-500/35 bg-green-500/[0.05]" : "border-gray-200 bg-gray-50"}`}>
+                        <span className="text-[10px] font-extrabold text-gray-400 w-3">{i + 1}</span>
+                        <StockMark symbol={L.leg.symbol} size={26} />
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-extrabold truncate">{L.name}</div>
+                          <div className="text-[9.5px] font-bold text-gray-400 mono">{L.leg.symbol}</div>
+                        </div>
+                        <div className="ml-auto text-right">
+                          <div className="text-[15px] font-extrabold tabular-nums mono">
+                            {tzs(L.m?.value)}
+                          </div>
+                          <div className={`text-[10.5px] font-bold tabular-nums ${
+                            (L.m?.roi ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                            {pct(L.m?.roi)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* transport */}
+                {/* ---- transport ---- */}
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     onClick={() => (playing ? setPlaying(false) : play())}
-                    className="w-11 h-11 rounded-full bg-neutral-950 text-white flex items-center justify-center hover:bg-neutral-800 flex-shrink-0"
-                    aria-label={playing ? "Pause replay" : "Play replay"}
+                    className="flex items-center gap-2 bg-neutral-950 text-white text-[12px]
+                               font-bold pl-4 pr-5 py-2.5 rounded-full hover:bg-neutral-800 flex-shrink-0"
                   >
-                    {playing ? (
-                      <Pause className="w-4 h-4" fill="currentColor" />
-                    ) : (
-                      <Play className="w-4 h-4 ml-0.5" fill="currentColor" />
-                    )}
+                    {playing
+                      ? <Pause className="w-3.5 h-3.5" fill="currentColor" />
+                      : <Play className="w-3.5 h-3.5" fill="currentColor" />}
+                    {playing ? "Pause" : t >= n - 1 ? "Play again" : "Play"}
                   </button>
-                  <button
-                    onClick={restart}
-                    className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center hover:border-neutral-900 flex-shrink-0"
-                    aria-label="Restart replay"
-                  >
+
+                  <button onClick={restart}
+                    className="w-9 h-9 rounded-full border border-gray-300 flex items-center
+                               justify-center hover:border-neutral-900 flex-shrink-0"
+                    aria-label="Restart replay">
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
 
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, n - 1)}
-                    value={t}
+                  <input type="range" min={0} max={Math.max(0, n - 1)} value={t}
                     onChange={(e) => { setPlaying(false); setT(Number(e.target.value)); }}
-                    className="flex-1 min-w-[180px] h-4 cursor-pointer"
-                    aria-label="Scrub through history"
-                  />
+                    className="flex-1 min-w-[160px] h-4 cursor-pointer"
+                    aria-label="Scrub through history" />
 
-                  <div className="flex gap-1 p-1 bg-gray-100 rounded-lg flex-shrink-0">
-                    {[0.5, 1, 2, 4].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => setSpeed(s)}
-                        className={`text-[10.5px] font-bold py-1 px-2 rounded ${
-                          speed === s ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"
-                        }`}
-                      >
-                        {s}×
+                  <div className="flex gap-1 p-1 bg-gray-100 rounded-full flex-shrink-0">
+                    {[0.5, 1, 2, 4].map((sp) => (
+                      <button key={sp} onClick={() => setSpeed(sp)}
+                        className={`text-[10.5px] font-bold py-1 px-2.5 rounded-full ${
+                          speed === sp ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"}`}>
+                        {sp}×
                       </button>
                     ))}
                   </div>
@@ -1488,62 +1668,73 @@ export default function SokoviewReplay() {
                 </div>
               </div>
 
-              {/* result cards */}
-              <div className={`grid gap-4 ${bOn ? "md:grid-cols-2" : ""}`}>
-                {[
-                  { m: mA, leg: legA, color: A_COLOR, title: "Plan A", show: true },
-                  { m: mB, leg: legB, color: B_COLOR, title: "Plan B", show: bOn },
-                ]
-                  .filter((x) => x.show && x.m)
-                  .map(({ m, leg, color, title }) => (
-                    <div key={title} className="border border-gray-200 rounded-2xl overflow-hidden">
-                      <div
-                        className="px-4 py-2.5 flex items-center justify-between"
-                        style={{ background: color }}
-                      >
-                        <span className="text-[11px] font-extrabold text-white flex items-center gap-2">
-                          <StockMark symbol={leg.symbol} size={18} ring />
-                          {title} · {leg.symbol}
+              {/* ---- full scorecard ---- */}
+              <section className="rounded-2xl bg-neutral-950 text-white px-5 sm:px-7 py-7">
+                <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-green-400">
+                    Full scorecard
+                  </div>
+                  <h2 className="text-[22px] sm:text-[28px] font-extrabold tracking-[-0.03em] leading-none">
+                    See every final number.
+                  </h2>
+                </div>
+
+                <div className={`grid gap-4 ${ranked.length > 1 ? "md:grid-cols-2" : ""}`}>
+                  {ranked.filter((L) => L.m).map((L, i) => (
+                    <div key={L.key}
+                      className={`rounded-2xl border p-5 ${
+                        i === 0 && ranked.length > 1
+                          ? "border-green-500/35 bg-green-500/[0.07]"
+                          : "border-white/10 bg-white/[0.03]"}`}>
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <span className="text-[10px] font-extrabold text-green-400">
+                          #{i + 1}
                         </span>
-                        <span className="text-[10px] font-bold text-white/70">
-                          {leg.strategy === "lump" ? "One-time" : `${leg.freq} top-up`}
+                        <StockMark symbol={L.leg.symbol} size={22} />
+                        <span className="text-[15px] font-extrabold mono">{L.leg.symbol}</span>
+                        <span className="text-[10.5px] font-bold text-white/40 truncate">
+                          {L.leg.strategy === "lump" ? "one-time" : `${L.leg.freq} top-up`}
                         </span>
                       </div>
-                      <div className="p-4">
-                        <div className="mb-4">
-                          <Stat
-                            label="Worth today"
-                            value={tzs(m.value)}
-                            big
-                            tone={m.gain >= 0 ? "green" : "red"}
-                            sub={`${pct(m.roi)} on ${tzs(m.invested)} invested`}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-y-3.5 gap-x-3">
-                          <Stat
-                            label="Profit"
-                            value={tzs(m.gain)}
-                            tone={m.gain >= 0 ? "green" : "red"}
-                          />
-                          <Stat
-                            label="Annualised (money-weighted)"
-                            value={pct(m.irr)}
-                            tone={m.irr == null ? "muted" : m.irr >= 0 ? "green" : "red"}
-                          />
-                          <Stat label="Shares held" value={nf.format(Math.round(m.shares))} />
-                          <Stat label="Average cost" value={tzs(m.avgCost)} />
-                          <Stat label="Dividends" value={tzs(m.divTotal)} sub={reinvest ? "reinvested" : "held as cash"} />
-                          <Stat label="Worst drop" value={pct(m.mdd)} tone="muted" />
-                        </div>
-                        {m.cash > 1 && (
-                          <div className="mt-3 pt-3 border-t border-gray-100 text-[10.5px] text-gray-400 font-semibold tabular-nums">
-                            {tzs(m.cash)} still uninvested
+
+                      <div className="text-[34px] sm:text-[40px] font-extrabold tracking-[-0.03em]
+                                      leading-none tabular-nums mono mb-5">
+                        {tzs(L.m.value)}
+                      </div>
+
+                      <dl className="space-y-0">
+                        {[
+                          { k: "Gain / loss", v: tzs(L.m.gain),
+                            tone: L.m.gain >= 0 ? "pos" : "neg" },
+                          { k: "Total return", v: pct(L.m.roi),
+                            tone: L.m.roi >= 0 ? "pos" : "neg" },
+                          { k: "Worst drop", v: pct(L.m.mdd), tone: "dim" },
+                          { k: "Annualised", v: pct(L.m.irr),
+                            tone: L.m.irr == null ? "dim" : L.m.irr >= 0 ? "pos" : "neg" },
+                          { k: "Money in", v: tzs(L.m.invested), tone: "dim" },
+                          { k: "Shares held", v: nf.format(Math.round(L.m.shares)), tone: "dim" },
+                        ].map((row) => (
+                          <div key={row.k}
+                            className="flex items-center justify-between py-2.5 border-t border-white/[0.07]">
+                            <dt className="text-[11.5px] text-white/45">{row.k}</dt>
+                            <dd className={`text-[12.5px] font-bold tabular-nums mono ${
+                              row.tone === "pos" ? "text-green-400"
+                                : row.tone === "neg" ? "text-red-400" : "text-white/80"}`}>
+                              {row.v}
+                            </dd>
                           </div>
-                        )}
-                      </div>
+                        ))}
+                      </dl>
+
+                      {L.m.cash > 1 && (
+                        <div className="text-[10px] text-white/30 mt-3 tabular-nums">
+                          {tzs(L.m.cash)} still uninvested
+                        </div>
+                      )}
                     </div>
                   ))}
-              </div>
+                </div>
+              </section>
 
               {/* method note */}
               <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
