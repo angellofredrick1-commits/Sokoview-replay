@@ -29,7 +29,14 @@ const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
 const DATE_MIN = "2000-01-01";
 const DATE_MAX = "2100-12-31";
 const saneDate = (d) =>
-  typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= DATE_MIN && d <= DATE_MAX;
+  typeof d === "string" &&
+  /^\d{4}-\d{2}-\d{2}$/.test(d) &&
+  d >= DATE_MIN &&
+  d <= DATE_MAX;
+
+/** A dash where a source genuinely says nothing, rather than a misleading 0. */
+const cell = (v) =>
+  v == null ? <span className="text-gray-300">—</span> : Number(v).toLocaleString();
 
 const prettyLong = (d) =>
   d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB",
@@ -52,7 +59,72 @@ function parseReportDate(text) {
   return `${m[3]}-${String(mi + 1).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
 }
 
-function parsePrices(text) {
+/**
+ * The DSE report carries its prices in headed tables — "EQUITY DAILY PRICES",
+ * "ETF DAILY PRICES" — whose rows run:
+ *
+ *   Co.  Opening  Closing  High  Low  Turnover  Deals  Volume  MktCap  Bids  Offers
+ *
+ * That closing price is the exchange's own number, and it is the one thing the
+ * quote endpoint gets wrong for the ETFs, where it has been serving a frozen
+ * value. So this table is read in preference to anything else in the email.
+ *
+ * Rows are validated rather than trusted: low <= open,close <= high must hold.
+ * A row that fails is dropped instead of being guessed at, because a wrong
+ * close here is worse than a missing one — it looks authoritative.
+ */
+const NUM_TOKEN = /-?\d[\d,]*(?:\.\d+)?/g;
+
+function parseColumnTables(text) {
+  const out = [];
+  // Split on the table headings so each ticker is read in the context of the
+  // table it belongs to; "Total" rows and page furniture fall outside.
+  const parts = text.split(/((?:EQUITY|ETF|BOND|PREFERENCE)\s+DAILY\s+PRICES)/i);
+  for (let p = 1; p < parts.length; p += 2) {
+    const heading = parts[p].toUpperCase();
+    const kind = /ETF/.test(heading) ? "etf" : /BOND/.test(heading) ? "bond" : "equity";
+    const body = parts[p + 1] || "";
+    const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    for (let i = 0; i < lines.length; i++) {
+      // A row starts with a ticker or company short name we recognise.
+      const lead = lines[i].match(/^([A-Z][A-Z0-9&.\- ]*?)(?=[\s\t]+[-\d])/);
+      if (!lead) continue;
+      const name = lead[1].trim().toUpperCase();
+      const sym = SYMBOLS[name];
+      if (!sym || out.some((r) => r.symbol === sym)) continue;
+
+      // Long rows wrap; keep pulling numbers from following lines until the
+      // row is complete or the next ticker begins.
+      let rest = lines[i].slice(lead[0].length);
+      let j = i;
+      let nums = rest.match(NUM_TOKEN) || [];
+      while (nums.length < 7 && j + 1 < lines.length) {
+        const nxt = lines[j + 1];
+        if (/^([A-Z][A-Z0-9&.\- ]*?)(?=[\s\t]+[-\d])/.test(nxt) || /^TOTAL\b/i.test(nxt)) break;
+        rest += " " + nxt;
+        nums = rest.match(NUM_TOKEN) || [];
+        j++;
+      }
+      if (nums.length < 7) continue;
+
+      const [open, close, high, low, , , volume] = nums.map(num);
+      if (low == null || high == null || close == null || low > high) continue;
+      if (close < low || close > high) continue;
+      if (open != null && (open < low || open > high)) continue;
+
+      out.push({
+        symbol: sym, name, kind,
+        open, close, low, high,
+        volume: volume == null ? 0 : volume,
+      });
+      i = j;
+    }
+  }
+  return out;
+}
+
+function parseRankedPrices(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l !== "");
   const out = [];
   const seenRank = new Set();
@@ -73,9 +145,22 @@ function parsePrices(text) {
     if (out.some((r) => r.symbol === sym)) continue; // side panel echo
 
     seenRank.add(rank);
-    out.push({ symbol: sym, name, low, high, volume: vol == null ? 0 : vol });
+    out.push({ symbol: sym, name, kind: /-ETF$/.test(sym) ? "etf" : "equity",
+               open: null, close: null, low, high, volume: vol == null ? 0 : vol });
   }
   return out;
+}
+
+/**
+ * Both shapes of the report are read and then merged. The column tables win
+ * wherever they overlap, because they carry the closing price; the ranked
+ * layout only ever supplied a range and a volume.
+ */
+function parsePrices(text) {
+  const cols = parseColumnTables(text);
+  const ranked = parseRankedPrices(text);
+  const have = new Set(cols.map((r) => r.symbol));
+  return [...cols, ...ranked.filter((r) => !have.has(r.symbol))];
 }
 
 function parseDividends(text) {
@@ -106,6 +191,166 @@ function parseDividends(text) {
     }
   }
   return out;
+}
+
+/* ============================================================================
+   Alpha Capital daily digest
+
+   The broker emails a summary of the DSE market report every session, and that
+   summary states things the quote endpoint does not: a closing price for both
+   ETFs — the one place the feed is frozen — plus a close for every stock in
+   the gainers and losers lists, and turnover and volume for the top movers.
+   ==========================================================================*/
+
+const COMPANY_NAMES = {
+  "TOL GASES": "TOL", "KENYA COMMERCIAL BANK": "KCB", "VODACOM TANZANIA": "VODA",
+  "MAENDELEO BANK": "MBP", "CRDB BANK": "CRDB", "DAR ES SALAAM STOCK EXCHANGE": "DSE",
+  "TANZANIA BREWERIES": "TBL", "TANZANIA PORTLAND CEMENT": "TPCC", "NMB BANK": "NMB",
+  "TANZANIA CIGARETTE": "TCC", "MWALIMU COMMERCIAL BANK": "MCB",
+  "EAST AFRICAN BREWERIES": "EABL", "TANGA CEMENT": "TCCL",
+  "MKOMBOZI COMMERCIAL BANK": "MKCB", "DCB COMMERCIAL BANK": "DCB",
+  "SWISSPORT TANZANIA": "SWIS", "NATIONAL INVESTMENT COMPANY": "NICO",
+  "MUFINDI COMMUNITY BANK": "MUCOBA", "TANZANIA TEA PACKERS": "TTP",
+  "PRECISION AIR": "PAL", "NATION MEDIA GROUP": "NMG", "JUBILEE HOLDINGS": "JHL",
+  "AFRIPRISE": "AFRIPRISE", "JATU": "JATU", "SWALA": "SWALA",
+  "UCHUMI COMMERCIAL BANK": "USL", "YETU MICROFINANCE": "YETU",
+  "ITRUST EAC LARGE CAP": "IEACLC-ETF", "VERTEX INTERNATIONAL SECURITIES": "VERTEX-ETF",
+};
+
+function looksLikeAlpha(text) {
+  const t = text.toUpperCase();
+  return /ETF PERFORMANCE/.test(t) ||
+         (/DEAR VALUED INVESTOR/.test(t) && /TOP GAINERS|MARKET TURNOVER/.test(t));
+}
+
+/** "as of 15th September 2026" — the body's date, never the subject line's. */
+function parseAlphaDate(text) {
+  const m = text.match(
+    /as of\s+(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})/i);
+  if (!m) return null;
+  const mi = MONTHS.indexOf(m[2].toUpperCase());
+  if (mi < 0) return null;
+  return `${m[3]}-${String(mi + 1).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+}
+
+/** "TZS 282.69 million" / "TZS 1.35 billion" -> plain shillings. */
+function tzs(tok) {
+  if (!tok) return null;
+  const m = String(tok).match(/([\d,]+\.?\d*)\s*(billion|bn|million|mln|m\b)?/i);
+  if (!m) return null;
+  const n = num(m[1]);
+  if (n == null) return null;
+  const unit = (m[2] || "").toLowerCase();
+  if (unit.startsWith("b")) return Math.round(n * 1e9);
+  if (unit.startsWith("m")) return Math.round(n * 1e6);
+  return Math.round(n);
+}
+
+/**
+ * Resolve a company by NAME first and only then by the ticker in brackets.
+ * The digest sometimes prints the wrong ticker — one edition labelled both
+ * Tanzania Cigarette and Tanga Cement "TCCL" — and a silently wrong symbol
+ * writes a real price onto the wrong company. Where the two disagree the name
+ * wins and the disagreement is reported rather than hidden.
+ */
+function resolveAlpha(name, ticker) {
+  const N = (name || "").toUpperCase();
+  let byName = null;
+  for (const k of Object.keys(COMPANY_NAMES).sort((a, b) => b.length - a.length)) {
+    if (N.includes(k)) { byName = COMPANY_NAMES[k]; break; }
+  }
+  const T = (ticker || "").toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
+  const byTicker = SYMBOLS[T] || (/(IEACLC|VIS)-?ETF/.test(T)
+    ? (T.startsWith("IEACLC") ? "IEACLC-ETF" : "VERTEX-ETF") : null);
+  return {
+    symbol: byName || byTicker,
+    conflict: byName && byTicker && byName !== byTicker ? { name, ticker, byName, byTicker } : null,
+  };
+}
+
+const SIGN = (s) => (/[▼–−-]\s*$/.test(s) || /▼/.test(s) ? -1 : 1);
+
+function parseAlpha(text) {
+  const rows = [];
+  const conflicts = [];
+  // One row per symbol, filled in from whichever section mentions it. Only
+  // real values are merged, so a later section that says nothing about volume
+  // cannot blank out a volume an earlier one supplied.
+  const put = (symbol, patch) => {
+    const real = Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null));
+    const at = rows.find((r) => r.symbol === symbol);
+    if (at) Object.assign(at, real);
+    else rows.push({ symbol, name: symbol, kind: /-ETF$/.test(symbol) ? "etf" : "equity",
+                     open: null, close: null, low: null, high: null, volume: null,
+                     turnover: null, pct: null, ...real });
+  };
+
+  // Gainers and losers: "TOL Gases Limited (TOL): ▲7.95% daily, ▲84.47% YTD – TZS 1,900"
+  const GL = /^(.+?)\s*\(([A-Z][A-Z0-9 \-]*)\)\s*:\s*(▲|▼|\+|-)?\s*([\d.]+)%\s*daily[^–—\-]*[–—-]\s*TZS\s*([\d,]+)/gim;
+  for (const m of text.matchAll(GL)) {
+    const { symbol, conflict } = resolveAlpha(m[1], m[2]);
+    if (conflict) conflicts.push(conflict);
+    if (!symbol) continue;
+    put(symbol, { name: m[1].trim(), close: num(m[5]),
+                  pct: (m[3] === "▼" || m[3] === "-" ? -1 : 1) * (num(m[4]) ?? 0) });
+  }
+
+  // Top movers: "NMB Bank Plc (NMB): TZS 12.89 billion from 5,320,799 shares"
+  // Some movers are written without a bracketed ticker at all — "AFRIPRISE: TZS
+  // 79.9 million from 132,165 shares" — so the brackets are optional here.
+  const MV = /^(.+?)\s*(?:\(([A-Z][A-Z0-9 \-]*)\))?\s*:\s*TZS\s*([\d,.]+\s*(?:billion|million|bn|mln)?)\s*from\s*([\d,]+)\s*shares/gim;
+  for (const m of text.matchAll(MV)) {
+    const { symbol, conflict } = resolveAlpha(m[1], m[2]);
+    if (conflict) conflicts.push(conflict);
+    if (!symbol) continue;
+    put(symbol, { turnover: tzs(m[3]), volume: num(m[4]), name: m[1].trim() });
+  }
+
+  // ETF block: a name line, then Price / Turnover / Performance on their own lines.
+  // Anchored on a line that IS the heading — the opening paragraph of every one
+  // of these emails contains the words "and ETF performance based on the latest
+  // daily market report", and splitting on that phrase lands before the gainers
+  // list instead of on the block itself.
+  const etfAt = text.search(/^[ \t]*ETF Performance[ \t]*$/im);
+  const etfSection = etfAt >= 0 ? text.slice(etfAt) : null;
+  if (etfSection) {
+    const lines = etfSection.split("\n").map((l) => l.trim());
+    let cur = null;
+    for (const l of lines) {
+      if (/^(Fixed Income|Bond|Should you|Warm regards)/i.test(l)) break;
+      const head = l.match(/^(.*?ETF)\s*\(([^)]+)\)\s*$/i) || l.match(/^(.*?ETF)\s*$/i);
+      if (head && !/^(Price|Turnover|Performance|Volume)/i.test(l)) {
+        const { symbol, conflict } = resolveAlpha(head[1], head[2] || "");
+        if (conflict) conflicts.push(conflict);
+        cur = symbol;
+        if (cur) put(cur, { name: head[1].trim(), kind: "etf" });
+        continue;
+      }
+      if (!cur) continue;
+      let m;
+      if ((m = l.match(/^(?:Closing\s+)?Price\s*:\s*TZS\s*([\d,]+\.?\d*)/i)))
+        put(cur, { close: num(m[1]) });
+      else if ((m = l.match(/^Turnover\s*:\s*TZS\s*([\d,.]+\s*(?:billion|million|bn|mln)?)/i)))
+        put(cur, { turnover: tzs(m[1]) });
+      else if ((m = l.match(/^Volume\s*:\s*([\d,]+)/i)))
+        put(cur, { volume: num(m[1]) });
+      else if ((m = l.match(/^Performance\s*:\s*(▲|▼|\+|-)?\s*([\d.]+)%/i)))
+        put(cur, { pct: (m[1] === "▼" || m[1] === "-" ? -1 : 1) * (num(m[2]) ?? 0) });
+    }
+  }
+
+  // A weekly round-up quotes a week-over-week move, not a daily one. The close
+  // is still that day's close, so it is kept; the percentage is not.
+  const weekly = /\b(weekly|week-over-week|monthly)\b/i.test(text) &&
+                 !/%\s*daily/i.test(text);
+  if (weekly) rows.forEach((r) => { r.pct = null; });
+
+  const seen = new Set();
+  return {
+    rows: rows.filter((r) => r.close != null || r.volume != null)
+              .filter((r) => (seen.has(r.symbol) ? false : seen.add(r.symbol))),
+    conflicts, weekly,
+  };
 }
 
 /* ============================================================================
@@ -229,21 +474,37 @@ export default function ReportParser() {
   const [copied, setCopied] = useState("");
   const [dateOverride, setDateOverride] = useState("");
 
-  const mode = useMemo(() => (text.trim() && looksLikeUtt(text) ? "utt" : "dse"), [text]);
+  const mode = useMemo(() => {
+    if (!text.trim()) return "dse";
+    if (looksLikeUtt(text)) return "utt";
+    if (looksLikeAlpha(text)) return "alpha";
+    return "dse";
+  }, [text]);
 
   const parsed = useMemo(() => {
     if (!text.trim()) return null;
-    const withDate = (m) => {
-      const raw = m.date;
-      return { ...m, date: saneDate(raw) ? raw : null, badDate: raw && !saneDate(raw) ? raw : null };
-    };
+    // An out-of-range date is reported separately from a missing one: the user
+    // needs to see the nonsense value they produced, not a generic "no date".
+    const withDate = (obj, raw) =>
+      saneDate(raw) ? { ...obj, date: raw } : { ...obj, date: null, badDate: raw || null };
     if (mode === "utt") {
       const u = parseUtt(text);
-      return withDate({ kind: "utt", date: dateOverride || u.reportDate,
-               rows: u.rows, divs: [], ambiguous: u.ambiguous, rawDate: u.rawDate });
+      return withDate(
+        { kind: "utt", rows: u.rows, divs: [], ambiguous: u.ambiguous, rawDate: u.rawDate },
+        dateOverride || u.reportDate
+      );
     }
-    return withDate({ kind: "dse", date: dateOverride || parseReportDate(text),
-             rows: parsePrices(text), divs: parseDividends(text) });
+    if (mode === "alpha") {
+      const a = parseAlpha(text);
+      return withDate(
+        { kind: "alpha", rows: a.rows, divs: [], conflicts: a.conflicts, weekly: a.weekly },
+        dateOverride || parseAlphaDate(text)
+      );
+    }
+    return withDate(
+      { kind: "dse", rows: parsePrices(text), divs: parseDividends(text) },
+      dateOverride || parseReportDate(text)
+    );
   }, [text, mode, dateOverride]);
 
   const csv = useMemo(() => {
@@ -254,9 +515,16 @@ export default function ReportParser() {
         `${r.symbol},${parsed.date},utt_amis,${r.nav},${r.sale},${r.repurchase},${r.units},${r.fundSize}`
       )].join("\n");
     }
-    const head = "symbol,trade_date,source,low,high,volume,traded";
+    if (parsed.kind === "alpha") {
+      const head = "symbol,trade_date,source,close,turnover,volume,traded";
+      return [head, ...parsed.rows.map((r) =>
+        `${r.symbol},${parsed.date},alpha_capital,${r.close ?? ""},${r.turnover ?? ""},` +
+        `${r.volume ?? ""},${r.turnover != null ? r.turnover > 0 : ""}`)].join("\n");
+    }
+    const head = "symbol,trade_date,source,open,close,low,high,volume,traded";
     const body = parsed.rows.map((r) =>
-      `${r.symbol},${parsed.date},dse_report,${r.low},${r.high},${r.volume},${r.volume > 0}`);
+      `${r.symbol},${parsed.date},dse_report,${r.open ?? ""},${r.close ?? ""},` +
+      `${r.low},${r.high},${r.volume},${r.volume > 0}`);
     return [head, ...body].join("\n");
   }, [parsed]);
 
@@ -279,15 +547,42 @@ export default function ReportParser() {
         `  units_outstanding = excluded.units_outstanding, fund_size = excluded.fund_size;`,
       ].join("\n");
     }
+    if (parsed.kind === "alpha") {
+      const etfs = parsed.rows.filter((r) => r.kind === "etf").length;
+      return [
+        `-- Alpha Capital daily digest, ${parsed.date}`,
+        `-- ${parsed.rows.length} instruments · ${etfs} ETF`,
+        `-- Percentages are not stored: the trigger in migration 0003 derives`,
+        `-- change from neighbouring rows, which is honest about gaps.`,
+        ``,
+        `insert into price_raw (symbol, trade_date, source, close, turnover, volume, traded) values`,
+        parsed.rows.map((r) =>
+          `  ('${r.symbol}', '${parsed.date}', 'alpha_capital', ${r.close ?? "null"}, ` +
+          `${r.turnover ?? "null"}, ${r.volume ?? "null"}, ` +
+          `${r.turnover != null ? r.turnover > 0 : "null"})`).join(",\n"),
+        `on conflict (symbol, trade_date, source) do update set`,
+        `  close = coalesce(excluded.close, price_raw.close),`,
+        `  turnover = coalesce(excluded.turnover, price_raw.turnover),`,
+        `  volume = coalesce(excluded.volume, price_raw.volume),`,
+        `  traded = coalesce(excluded.traded, price_raw.traded);`,
+      ].join("\n");
+    }
+    const withClose = parsed.rows.filter((r) => r.close != null).length;
     const lines = [
       `-- DSE market report ${parsed.date}`,
       `-- ${parsed.rows.length} instruments · ${parsed.rows.filter(r => r.volume > 0).length} traded`,
+      `-- ${withClose} carry the exchange's own closing price`,
       ``,
-      `insert into price_raw (symbol, trade_date, source, low, high, volume, traded) values`,
+      `insert into price_raw (symbol, trade_date, source, open, close, low, high, volume, traded) values`,
       parsed.rows.map((r) =>
-        `  ('${r.symbol}', '${parsed.date}', 'dse_report', ${r.low}, ${r.high}, ${r.volume}, ${r.volume > 0})`
+        `  ('${r.symbol}', '${parsed.date}', 'dse_report', ${r.open ?? "null"}, ` +
+        `${r.close ?? "null"}, ${r.low}, ${r.high}, ${r.volume}, ${r.volume > 0})`
       ).join(",\n"),
       `on conflict (symbol, trade_date, source) do update set`,
+      // A re-paste of an older, closeless copy of the same report must not
+      // erase a close already recorded for that day.
+      `  open  = coalesce(excluded.open,  price_raw.open),`,
+      `  close = coalesce(excluded.close, price_raw.close),`,
       `  low = excluded.low, high = excluded.high,`,
       `  volume = excluded.volume, traded = excluded.traded;`,
     ];
@@ -324,10 +619,12 @@ export default function ReportParser() {
             Paste a market report
           </h1>
           <p className="text-[12px] text-gray-500 leading-relaxed max-w-2xl">
-            Two formats are recognised automatically: a <strong className="text-neutral-900">DSE
-            daily market report</strong> email, or the <strong className="text-neutral-900">UTT
-            AMIS Net Asset Value</strong> table. Paste either and you get SQL to run in
-            Supabase. Nothing is sent anywhere — it parses in your browser.
+            Three formats are recognised automatically: a <strong className="text-neutral-900">DSE
+            daily market report</strong>, the <strong className="text-neutral-900">Alpha Capital
+            daily digest</strong> that arrives by email each evening, or the{" "}
+            <strong className="text-neutral-900">UTT AMIS Net Asset Value</strong> table. Paste
+            any of them and you get SQL to run in Supabase. Nothing is sent anywhere — it
+            parses in your browser.
           </p>
         </div>
 
@@ -343,15 +640,16 @@ export default function ReportParser() {
           <div className="border border-red-300 bg-red-50 rounded-xl p-3.5 flex gap-2.5">
             <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="text-[11.5px] text-red-800 leading-relaxed">
-              <strong>That date can't be right.</strong>{" "}
-              <code className="bg-white px-1 rounded">{parsed.badDate}</code> is outside
-              2000–2100 — a date field commits a partial year while you type, so a stray
-              digit lands as year 2. Nothing will be generated until it's fixed.
+              <strong>That date is not real.</strong> It reads{" "}
+              <code className="bg-white px-1 rounded font-bold">{parsed.badDate}</code>, which is
+              outside {DATE_MIN.slice(0, 4)}–{DATE_MAX.slice(0, 4)}. Date fields commit each
+              keystroke, so a year typed slowly lands as a year like 0002 before you finish.
+              Nothing will be generated until it is fixed.
               <div className="mt-2 flex items-center gap-2">
-                <input type="date" min={DATE_MIN} max={DATE_MAX} value=""
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={dateOverride}
                   onChange={(e) => setDateOverride(e.target.value)}
                   className="border border-red-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
-                <span className="text-[10.5px] text-red-700">set the report date</span>
+                <span className="text-[10.5px] text-red-700">set the real report date</span>
               </div>
             </div>
           </div>
@@ -375,6 +673,35 @@ export default function ReportParser() {
           </div>
         )}
 
+        {parsed?.kind === "alpha" && parsed.conflicts?.length > 0 && (
+          <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-amber-800 leading-relaxed">
+              <strong>The digest printed a ticker that does not match the company.</strong>{" "}
+              The company name was used instead, which is the safer of the two — a wrong
+              ticker writes a real price onto the wrong stock.
+              <ul className="mt-1.5 space-y-0.5">
+                {parsed.conflicts.map((c, i) => (
+                  <li key={i} className="font-mono text-[10.5px]">
+                    {c.name} → <strong>{c.byName}</strong> (email said {c.byTicker})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {parsed?.kind === "alpha" && parsed.weekly && (
+          <div className="border border-gray-200 bg-gray-50 rounded-xl p-3.5 flex gap-2.5">
+            <Info className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-gray-600 leading-relaxed">
+              This looks like a <strong className="text-neutral-900">weekly round-up</strong>,
+              so the percentages it quotes are week-over-week. The prices are still that
+              day's closes and are kept; the percentages are dropped.
+            </div>
+          </div>
+        )}
+
         {parsed?.kind === "utt" && parsed.ambiguous && (
           <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -385,7 +712,7 @@ export default function ReportParser() {
               digits would be a different day in month-first order. Confirm before running
               the SQL: a wrong date silently overwrites another day.
               <div className="mt-2 flex items-center gap-2">
-                <input type="date" min={DATE_MIN} max={DATE_MAX} value={parsed.date ?? ""}
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={parsed.date || ""}
                   onChange={(e) => setDateOverride(e.target.value)}
                   className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
                 <span className="text-[10.5px] text-amber-700">adjust if wrong</span>
@@ -405,9 +732,14 @@ export default function ReportParser() {
                       v: "TZS " + (parsed.rows.reduce((t, r) => t + r.fundSize, 0) / 1e12).toFixed(2) + "T" },
                   ]
                 : [
-                    { l: "Report date", v: parsed.date },
-                    { l: "Instruments", v: parsed.rows.length },
-                    { l: "Traded", v: parsed.rows.filter((r) => r.volume > 0).length },
+                    { l: parsed.kind === "alpha" ? "As of" : "Report date", v: parsed.date },
+                    { l: "Instruments",
+                      v: parsed.rows.length +
+                         (parsed.rows.some((r) => r.kind === "etf")
+                           ? ` · ${parsed.rows.filter((r) => r.kind === "etf").length} ETF`
+                           : "") },
+                    { l: parsed.kind === "alpha" ? "With a close" : "With exchange close",
+                      v: `${parsed.rows.filter((r) => r.close != null).length} of ${parsed.rows.length}` },
                   ]
               ).map((s) => (
                 <div key={s.l} className="border border-gray-200 rounded-xl p-3.5">
@@ -503,6 +835,7 @@ export default function ReportParser() {
                   <thead className="sticky top-0 bg-white">
                     <tr className="text-[9px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-100">
                       <th className="text-left px-4 py-2">Symbol</th>
+                      <th className="text-right px-3 py-2">Close</th>
                       <th className="text-right px-3 py-2">Low</th>
                       <th className="text-right px-3 py-2">High</th>
                       <th className="text-right px-3 py-2">Volume</th>
@@ -514,17 +847,25 @@ export default function ReportParser() {
                       <tr key={r.symbol} className="hover:bg-gray-50">
                         <td className="px-4 py-1.5">
                           <span className="font-extrabold">{r.symbol}</span>
-                          {r.name !== r.symbol && (
+                          {r.kind === "etf" && (
+                            <span className="text-[8.5px] font-bold uppercase tracking-wide text-green-700 bg-green-500/10 border border-green-500/25 px-1.5 py-[1px] rounded-full ml-1.5">
+                              etf
+                            </span>
+                          )}
+                          {r.name !== r.symbol && r.kind !== "etf" && (
                             <span className="text-[9.5px] text-gray-400 ml-1.5">{r.name}</span>
                           )}
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{r.low.toLocaleString()}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{r.high.toLocaleString()}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums font-bold">
+                          {cell(r.close)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{cell(r.low)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{cell(r.high)}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
-                          {r.volume.toLocaleString()}
+                          {cell(r.volume)}
                         </td>
                         <td className="px-4 py-1.5 text-center">
-                          {r.volume > 0
+                          {(r.volume ?? 0) > 0 || (r.turnover ?? 0) > 0
                             ? <Check className="w-3.5 h-3.5 text-green-600 inline" />
                             : <span className="text-gray-300 text-[10px]">—</span>}
                         </td>
@@ -541,7 +882,18 @@ export default function ReportParser() {
         <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
           <p>
-            {mode === "utt" ? (
+            {mode === "alpha" ? (
+              <>
+                <strong className="text-neutral-900">This is the only source that prices
+                the ETFs.</strong> The quote endpoint has been serving one frozen value for
+                IEACLC-ETF and VERTEX-ETF, which is why a replay across those days came back
+                at exactly 0.0%. The digest also gives a close for every stock in its gainers
+                and losers lists and turnover and volume for the top movers, so one paste
+                covers most of the market. Rows are written as{" "}
+                <code className="bg-gray-100 px-1 rounded">alpha_capital</code>, which ranks
+                below the exchange's own report and above everything else.
+              </>
+            ) : mode === "utt" ? (
               <>
                 <strong className="text-neutral-900">Sale price is what you pay; repurchase
                 is what you get back.</strong> On the balanced funds those differ — a unit
@@ -552,11 +904,14 @@ export default function ReportParser() {
               </>
             ) : (
               <>
-                The report's main table has Low, High and Shares Traded — <strong className="text-neutral-900">no
-                closing price</strong>. The email also interleaves the top-gainer panels into
-                that table, so a close inferred by position would often be the day's high
-                instead. Range and volume are what the report actually states, and volume is
-                the thing your capture is missing. Closes still come from the vendor feed.
+                The report's <strong className="text-neutral-900">EQUITY DAILY PRICES</strong> and
+                <strong className="text-neutral-900"> ETF DAILY PRICES</strong> tables both carry
+                an opening and closing price, and those are read here in preference to
+                anything else in the email — the exchange's own close outranks the vendor
+                feed, which is what matters for the two ETFs, where the feed has been stuck
+                on one value. A row whose close falls outside its own low–high range is
+                dropped rather than guessed at. Where only the older ranked layout is
+                present, you still get range and volume and the close stays empty.
               </>
             )}
           </p>

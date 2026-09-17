@@ -229,7 +229,7 @@ export default function CaptureMonitor() {
     // the close comes from the best source that HAS a close, and volume from the
     // best source that has volume. The exchange report carries range + volume but
     // no closing price, so picking a single row would lose one or the other.
-    const RANK = { dse_report: 1, african_markets: 2, sokoview_quote: 3 };
+    const RANK = { dse_report: 1, alpha_capital: 2, african_markets: 3, sokoview_quote: 4 };
     const rank = (r) => RANK[r.source] ?? 9;
     const todayOne = todaySymbols.map((sym) => {
       const rows = today.filter((r) => r.symbol === sym);
@@ -398,7 +398,7 @@ export default function CaptureMonitor() {
     if (!raw.length || !kindDate) return [];
     const onDate = raw.filter((r) => r.trade_date === kindDate
       && (kindOf[r.symbol] || "equity") === assetKind);
-    const RANK = { dse_report: 1, african_markets: 2, utt_amis: 2, sokoview_quote: 3 };
+    const RANK = { dse_report: 1, alpha_capital: 2, african_markets: 3, utt_amis: 3, sokoview_quote: 4 };
     const rk = (r) => RANK[r.source] ?? 9;
     const syms = [...new Set(onDate.map((r) => r.symbol))];
     const rows = syms.map((sym) => {

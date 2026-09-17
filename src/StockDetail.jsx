@@ -65,8 +65,12 @@ const shortDate = (d) =>
 
 const SOURCE_META = {
   dse_report:      { label: "Exchange",    color: "#22c55e", rank: 1 },
-  african_markets: { label: "Vendor",      color: "#60a5fa", rank: 2 },
-  sokoview_quote:  { label: "Own capture", color: "#d4d4d8", rank: 3 },
+  // The broker's daily digest restates the exchange report the same evening,
+  // and it is the only source that states a closing price for the ETFs.
+  alpha_capital:   { label: "Broker",      color: "#34d399", rank: 2 },
+  african_markets: { label: "Vendor",      color: "#60a5fa", rank: 3 },
+  utt_amis:        { label: "Manager",     color: "#a78bfa", rank: 3 },
+  sokoview_quote:  { label: "Own capture", color: "#d4d4d8", rank: 4 },
 };
 const srcColor = (s) => SOURCE_META[s]?.color ?? "#e5e7eb";
 const srcRank = (s) => SOURCE_META[s]?.rank ?? 9;
@@ -334,7 +338,12 @@ export default function StockDetail() {
         units: f ? Number(f.units_outstanding) : null,
         fundSize: f ? Number(f.fund_size) : null,
         close: base.close == null ? null : Number(base.close),
-        source: wc[0]?.source ?? rs[0].source,
+        // Provenance is about which source stands behind the day, not merely
+        // which one supplied the close. A DSE report carries the exchange's own
+        // range and volume but no closing price, so keying this off the close
+        // alone renders a genuinely exchange-backed day as "own capture".
+        source: [...rs].sort((a, b) => srcRank(a.source) - srcRank(b.source))[0].source,
+        closeSource: wc[0]?.source ?? null,
         volume: wv[0] ? Number(wv[0].volume) : null,
         volumeSource: wv[0]?.source ?? null,
         sources: rs,
@@ -400,12 +409,24 @@ export default function StockDetail() {
     const ret = first && last && first.closeAdj
       ? (100 * (last.closeAdj - first.closeAdj)) / first.closeAdj : null;
 
+    // A close that never changes across the whole range is either a stock that
+    // truly never traded or an upstream feed stuck on one value. The exchange's
+    // range separates the two: if low/high moved while the close did not, the
+    // feed is frozen.
+    const distinctCloses = new Set(days.map((d) => Number(d.close))).size;
+    const rangeMoved = new Set(
+      days.filter((d) => d.low != null && d.high != null)
+          .map((d) => `${d.low}|${d.high}`)
+    ).size;
+    const frozenClose = days.length >= 5 && distinctCloses === 1;
+
     const fundDays = days.filter((d) => d.sale != null);
     const lastFund = fundDays[fundDays.length - 1] ?? null;
     const firstFund = fundDays[0] ?? null;
 
     return {
       days, recon, exchangeDays, longest,
+      frozenClose, distinctCloses, rangeMoved,
       isFund: fundDays.length > 0,
       lastFund, firstFund,
       spread: lastFund && lastFund.sale > 0
@@ -576,7 +597,14 @@ export default function StockDetail() {
 
             <Panel
               title="Price"
-              hint={model.actionsInRange.length
+              hint={model.frozenClose
+                ? `The close has been ${tzs(model.last.close)} on every one of these ` +
+                  `${model.days.length} days` +
+                  (model.rangeMoved > 1
+                    ? ` while the exchange's own range moved ${model.rangeMoved} times — ` +
+                      `the price feed is stuck, not the market.`
+                    : `. Either it genuinely never traded, or the feed is stuck.`)
+                : model.actionsInRange.length
                 ? `${model.actionsInRange.length} corporate action${model.actionsInRange.length > 1 ? "s" : ""} in range — toggle to see the unadjusted series`
                 : "No corporate actions recorded in this range"}
               right={
