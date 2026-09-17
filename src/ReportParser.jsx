@@ -20,6 +20,17 @@ const SYMBOLS = {
 const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
                 "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
 
+/**
+ * A <input type="date"> commits partial input as you type: typing the year one
+ * digit at a time can yield "0002-09-17" and the browser reports it as a valid
+ * value. That silently produced 28 rows dated year 2, so every date is checked
+ * against a sane window before it can reach the SQL.
+ */
+const DATE_MIN = "2000-01-01";
+const DATE_MAX = "2100-12-31";
+const saneDate = (d) =>
+  typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= DATE_MIN && d <= DATE_MAX;
+
 const prettyLong = (d) =>
   d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB",
       { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -222,13 +233,17 @@ export default function ReportParser() {
 
   const parsed = useMemo(() => {
     if (!text.trim()) return null;
+    const withDate = (m) => {
+      const raw = m.date;
+      return { ...m, date: saneDate(raw) ? raw : null, badDate: raw && !saneDate(raw) ? raw : null };
+    };
     if (mode === "utt") {
       const u = parseUtt(text);
-      return { kind: "utt", date: dateOverride || u.reportDate,
-               rows: u.rows, divs: [], ambiguous: u.ambiguous, rawDate: u.rawDate };
+      return withDate({ kind: "utt", date: dateOverride || u.reportDate,
+               rows: u.rows, divs: [], ambiguous: u.ambiguous, rawDate: u.rawDate });
     }
-    return { kind: "dse", date: dateOverride || parseReportDate(text),
-             rows: parsePrices(text), divs: parseDividends(text) };
+    return withDate({ kind: "dse", date: dateOverride || parseReportDate(text),
+             rows: parsePrices(text), divs: parseDividends(text) });
   }, [text, mode, dateOverride]);
 
   const csv = useMemo(() => {
@@ -324,7 +339,25 @@ export default function ReportParser() {
           className="w-full border border-gray-300 rounded-xl px-3.5 py-3 text-[11.5px] font-mono outline-none focus:border-green-500 resize-y"
         />
 
-        {parsed && !parsed.date && (
+        {parsed?.badDate && (
+          <div className="border border-red-300 bg-red-50 rounded-xl p-3.5 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-red-800 leading-relaxed">
+              <strong>That date can't be right.</strong>{" "}
+              <code className="bg-white px-1 rounded">{parsed.badDate}</code> is outside
+              2000–2100 — a date field commits a partial year while you type, so a stray
+              digit lands as year 2. Nothing will be generated until it's fixed.
+              <div className="mt-2 flex items-center gap-2">
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value=""
+                  onChange={(e) => setDateOverride(e.target.value)}
+                  className="border border-red-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
+                <span className="text-[10.5px] text-red-700">set the report date</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {parsed && !parsed.date && !parsed.badDate && (
           <div className="border border-amber-300 bg-amber-50 rounded-xl p-3.5 flex gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="text-[11.5px] text-amber-800 leading-relaxed">
@@ -333,7 +366,7 @@ export default function ReportParser() {
                 ? "Include the Date Valued column when you copy, or set the date here."
                 : "The parser looks for a line like “MARKET REPORT ON 24TH AUGUST 2026”. Include the header when you copy."}
               <div className="mt-2 flex items-center gap-2">
-                <input type="date" value={dateOverride}
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={dateOverride}
                   onChange={(e) => setDateOverride(e.target.value)}
                   className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
                 <span className="text-[10.5px] text-amber-700">set it manually</span>
@@ -352,7 +385,7 @@ export default function ReportParser() {
               digits would be a different day in month-first order. Confirm before running
               the SQL: a wrong date silently overwrites another day.
               <div className="mt-2 flex items-center gap-2">
-                <input type="date" value={parsed.date}
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={parsed.date ?? ""}
                   onChange={(e) => setDateOverride(e.target.value)}
                   className="border border-amber-300 rounded-lg px-2 py-1 text-[11px] font-bold" />
                 <span className="text-[10.5px] text-amber-700">adjust if wrong</span>
