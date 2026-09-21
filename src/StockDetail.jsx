@@ -562,6 +562,26 @@ export default function StockDetail() {
           </div>
         </div>
 
+        {/*
+          An instrument can be registered before any prices arrive — that is the
+          normal state between running a migration and running its backfill. The
+          page used to render the header and then stop, which reads as a broken
+          page rather than an empty one, and sends you looking for a crash that
+          is not there.
+        */}
+        {!model && !state.loading && !state.error && (
+          <div className="border border-gray-200 rounded-2xl px-5 py-10 text-center">
+            <div className="text-[13px] font-extrabold text-neutral-950 mb-1.5">
+              {liq?.name || symbol} is registered, but no prices have been stored yet
+            </div>
+            <p className="text-[11.5px] text-gray-500 leading-relaxed max-w-md mx-auto">
+              {liq?.kind === "fund"
+                ? "Run the fund backfill to load its valuation history, then reload this page."
+                : "Nothing has been captured for this instrument yet. Paste a market report on /report, or wait for the next nightly capture."}
+            </p>
+          </div>
+        )}
+
         {model && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
