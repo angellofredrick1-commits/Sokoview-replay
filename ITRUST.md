@@ -24,15 +24,39 @@ GET https://api.itrust.co.tz/api/fund/iGrowth
 ## Running it
 
 ```
-# everything, once
+# everything — may take two or three clicks, see below
 /.netlify/functions/backfill-itrust?token=YOUR_TOKEN
 
-# one scheme
+# one scheme, or several
 /.netlify/functions/backfill-itrust?token=…&fund=iGrowth
+/.netlify/functions/backfill-itrust?token=…&fund=iSave,Imaan
 
 # see what would be written without writing it
 /.netlify/functions/backfill-itrust?token=…&dry=1
 ```
+
+`token` is the **value** of `CAPTURE_TRIGGER_TOKEN` from the Netlify
+environment variables, not the words `CAPTURE_TRIGGER_TOKEN`.
+
+### It finishes in more than one click, on purpose
+
+A synchronous Netlify function is killed at around ten seconds and the caller
+gets a bare `502` with no body — no error, no partial result, nothing to debug.
+Seven feeds and roughly two thousand rows do not fit in that budget.
+
+So the run works against a deadline. Each call writes what it can, then returns
+the schemes it did not reach:
+
+```json
+{ "ok": false,
+  "funds": [ { "symbol": "ICASH", "written": 365, … } ],
+  "remaining": ["iSave", "iIncome", "Imaan", "iDollar", "iEACLC-ETF"],
+  "next": "/.netlify/functions/backfill-itrust?token=…&fund=iSave,iIncome,…" }
+```
+
+Open `next` until `ok` comes back `true`. Nothing is lost between calls — every
+invocation commits what it managed, and the upsert is idempotent, so re-running
+any part of it is safe.
 
 After the first run, `capture-funds` keeps them current on its own at 18:00 EAT
 daily. It asks for the last 21 days each time, so a day the job was down repairs

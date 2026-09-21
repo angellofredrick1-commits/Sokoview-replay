@@ -3,6 +3,11 @@
  *
  *   GET /.netlify/functions/backfill-itrust?token=YOUR_TOKEN
  *   GET /.netlify/functions/backfill-itrust?token=…&fund=iGrowth   (one scheme)
+ *   GET /.netlify/functions/backfill-itrust?token=…&fund=iSave,Imaan  (several)
+ *
+ * A synchronous Netlify function dies at ~10s, so a full run is done against a
+ * time budget: each call writes what it can and returns a `next` URL with the
+ * schemes it did not reach. Open that until the response says ok: true.
  *   GET /.netlify/functions/backfill-itrust?token=…&since=2026-01-01
  *   GET /.netlify/functions/backfill-itrust?token=…&dry=1          (parse only)
  *
@@ -89,7 +94,9 @@ export async function fetchFund(id) {
       Accept: "application/json",
       "User-Agent": "SokoviewDataCapture/1.0 (+https://sokoview.co.tz)",
     },
-    signal: AbortSignal.timeout(30000),
+    // Short enough that a slow feed fails inside our own budget rather
+    // than being killed by the platform, which returns a bodiless 502.
+    signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`iTrust ${id}: HTTP ${res.status}`);
   const body = await res.json();
@@ -177,9 +184,13 @@ export const handler = async (event) => {
 
   const only = event.queryStringParameters?.fund;
   const since = event.queryStringParameters?.since || null;
-  const targets = only
-    ? FUNDS.filter((f) => f.id.toLowerCase() === only.toLowerCase() ||
-                          f.symbol.toLowerCase() === only.toLowerCase())
+  // `fund` takes one name or a comma-separated list, which is what the resume
+  // URL below hands back — so continuing an interrupted run is one click, not
+  // one click per remaining scheme.
+  const wanted = (only || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const targets = wanted.length
+    ? FUNDS.filter((f) => wanted.includes(f.id.toLowerCase()) ||
+                          wanted.includes(f.symbol.toLowerCase()))
     : FUNDS;
   if (!targets.length) {
     return json({ error: `Unknown fund '${only}'`, known: FUNDS.map((f) => f.id) }, 400);
@@ -188,7 +199,25 @@ export const handler = async (event) => {
   const summary = [];
   const refused = [];
 
+  /**
+   * A synchronous Netlify function is killed at roughly ten seconds, and the
+   * caller gets a bare 502 with no body — no error, no partial result, no clue.
+   * Seven feeds and ~2,000 rows do not fit in that budget.
+   *
+   * So the work is done against a deadline: funds are processed until the
+   * budget is nearly spent, then the response says what was written and hands
+   * back a URL for the rest. Every invocation commits what it managed, and the
+   * job finishes in as many clicks as it takes rather than failing whole.
+   */
+  const started = Date.now();
+  // Only START another fund while comfortably inside the limit: one fund
+  // costs a fetch plus an upsert, so leaving headroom matters more than
+  // squeezing in one more.
+  const BUDGET_MS = 4000;
+  const remaining = [];
+
   for (const f of targets) {
+    if (Date.now() - started > BUDGET_MS) { remaining.push(f.id); continue; }
     try {
       const raw = await fetchFund(f.id);
       const built = buildRows(raw, f.symbol, { since });
@@ -230,12 +259,25 @@ export const handler = async (event) => {
     .map((s) => ({ symbol: s.symbol, last: s.last,
                    days_behind: Math.round((Date.parse(today) - Date.parse(s.last)) / 864e5) }));
 
+  const qs = (ids) => {
+    const p = new URLSearchParams({ token: expected, fund: ids.join(",") });
+    if (since) p.set("since", since);
+    if (dry) p.set("dry", "1");
+    return `/.netlify/functions/backfill-itrust?${p}`;
+  };
+
   return json({
-    ok: refused.length === 0,
+    ok: refused.length === 0 && !remaining.length,
     dry_run: dry || undefined,
+    elapsed_ms: Date.now() - started,
     funds: summary,
     refused: refused.length ? refused : undefined,
     total_written: dry ? 0 : summary.reduce((t, s) => t + (s.written || 0), 0),
     stale_feeds: stale.length ? stale : undefined,
+    // Whatever did not fit in this invocation's time budget. `next` carries the
+    // token and every remaining scheme, so finishing the job means opening it
+    // until `ok` comes back true.
+    remaining: remaining.length ? remaining : undefined,
+    next: remaining.length ? qs(remaining) : undefined,
   }, refused.length && !summary.length ? 502 : 200);
 };
