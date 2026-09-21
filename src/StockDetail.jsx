@@ -69,8 +69,12 @@ const SOURCE_META = {
   // and it is the only source that states a closing price for the ETFs.
   alpha_capital:   { label: "Broker",      color: "#34d399", rank: 2 },
   african_markets: { label: "Vendor",      color: "#60a5fa", rank: 3 },
-  utt_amis:        { label: "Manager",     color: "#a78bfa", rank: 3 },
   sokoview_quote:  { label: "Own capture", color: "#d4d4d8", rank: 4 },
+  // A manager's own NAV outranks nothing: for a listed ETF it is what the fund
+  // is worth, not what anyone paid. For a unit trust it is the only source
+  // there is, so the ranking never comes up.
+  utt_amis:        { label: "Manager",     color: "#a78bfa", rank: 5 },
+  itrust:          { label: "Manager",     color: "#a78bfa", rank: 6 },
 };
 const srcColor = (s) => SOURCE_META[s]?.color ?? "#e5e7eb";
 const srcRank = (s) => SOURCE_META[s]?.rank ?? 9;

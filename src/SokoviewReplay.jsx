@@ -64,7 +64,7 @@ async function fetchUniverse(cfg) {
   // Funds never appear in liquidity_profile — they have no volume — so build
   // from the instrument table and attach liquidity where it exists.
   const [inst, liq] = await Promise.all([
-    sbFetch("instrument?select=symbol,name,kind&order=symbol.asc", cfg),
+    sbFetch("instrument?select=symbol,name,kind,currency&order=symbol.asc", cfg),
     sbFetch("liquidity_profile?select=symbol,pct_days_traded,days,longest_dry_spell,first_day,last_day",
       cfg).catch(() => []),
   ]);
@@ -78,6 +78,7 @@ async function fetchUniverse(cfg) {
         symbol: i.symbol,
         name: i.name,
         kind: i.kind || "equity",
+        currency: i.currency || "TZS",
         pctTraded: l ? Number(l.pct_days_traded ?? 0) : null,
         days: l ? Number(l.days ?? 0) : null,
         dry: l ? Number(l.longest_dry_spell ?? 0) : null,
@@ -702,6 +703,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                             : u.pctTraded != null
                             ? ` · ${u.pctTraded.toFixed(0)}% traded`
                             : ""}
+                          {u.currency && u.currency !== "TZS" ? ` · ${u.currency}` : ""}
                         </option>
                       ))}
                     </optgroup>
@@ -835,6 +837,22 @@ export default function SokoviewReplay() {
     universe.forEach((u) => { m[u.symbol] = u; });
     return m;
   }, [universe]);
+
+  /**
+   * iDollar is priced in US dollars; everything else on the DSE is in
+   * shillings. Racing the two would draw a chart whose gap is mostly the
+   * exchange rate, presented as though one manager had beaten the other. The
+   * comparison is refused rather than annotated, because a chart is read long
+   * before its footnote is.
+   */
+  const currencyClash = useMemo(() => {
+    if (!bOn || source !== "live") return null;
+    const a = liqOf[legA.symbol], b = liqOf[legB.symbol];
+    if (!a || !b) return null;
+    const ca = a.currency || "TZS", cb = b.currency || "TZS";
+    if (ca === cb) return null;
+    return { a: { symbol: a.symbol, currency: ca }, b: { symbol: b.symbol, currency: cb } };
+  }, [bOn, source, liqOf, legA.symbol, legB.symbol]);
 
   const spreadOf = useCallback((sym) => {
     const bars = liveData[sym];
@@ -1276,7 +1294,22 @@ export default function SokoviewReplay() {
                           rounded-full pointer-events-none"
             style={{ background: "radial-gradient(circle, rgba(34,197,94,.11) 0%, transparent 70%)" }} />
           <div className="relative">
-            {noData ? (
+            {currencyClash ? (
+              <div className="py-10 text-center max-w-xl mx-auto">
+                <div className="text-[15px] font-extrabold mb-1.5">
+                  These two are priced in different currencies
+                </div>
+                <div className="text-[12px] text-gray-500 leading-relaxed">
+                  {currencyClash.a.symbol} is quoted in{" "}
+                  <strong className="text-neutral-900">{currencyClash.a.currency}</strong> and{" "}
+                  {currencyClash.b.symbol} in{" "}
+                  <strong className="text-neutral-900">{currencyClash.b.currency}</strong>. Running
+                  them against each other would compare a shilling return with a dollar one and
+                  present the exchange rate as performance. Pick two in the same currency, or turn
+                  the second plan off to replay {currencyClash.a.symbol} on its own.
+                </div>
+              </div>
+            ) : noData ? (
               <div className="py-10 text-center">
                 <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
                 <div className="text-[12px] text-gray-500">
