@@ -5,6 +5,7 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  included_files = ["src/data/seed.json"]
 
 # Capture monitor lives at /capture — must come before the SPA catch-all,
 # which is evaluated top-down and would otherwise swallow it.
@@ -21,6 +22,17 @@
 [[redirects]]
   from = "/report"
   to = "/report.html"
+  status = 200
+
+[[redirects]]
+  from = "/dividends"
+  to = "/dividends.html"
+  status = 200
+
+# Subscribable calendar feed: /dividends.ics?symbols=CRDB,NMB&types=lastbuy,pay
+[[redirects]]
+  from = "/dividends.ics"
+  to = "/.netlify/functions/dividends-ics"
   status = 200
 
 # SPA fallback for the replayer.

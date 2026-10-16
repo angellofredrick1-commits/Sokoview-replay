@@ -13,6 +13,7 @@ export default defineConfig({
         capture: resolve(__dirname, "capture.html"),
         report: resolve(__dirname, "report.html"),
         stock: resolve(__dirname, "stock.html"),
+        dividends: resolve(__dirname, "dividends.html"),
       },
     },
   },
