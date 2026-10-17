@@ -322,3 +322,90 @@ body.dc-noscroll { overflow: hidden; }
 
 .dc-hero__overdue { margin: 10px 0 0; font-size: 14px; color: var(--dc-muted); }
 @media (max-width: 480px) { .dc-wide { display: none; } .dc-row { gap: 10px; } .dc-row__main .dc-mark { display: none; } }
+
+/* ---------- stock picker ---------- */
+.dc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.dc-picker { position: relative; display: inline-flex; }
+.dc-picker select {
+  appearance: none; -webkit-appearance: none;
+  min-height: 38px; max-width: 280px; padding: 0 36px 0 14px; border-radius: 11px;
+  border: 1px solid var(--dc-line); background: var(--dc-bg); color: var(--dc-ink);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-overflow: ellipsis;
+}
+.dc-picker::after {
+  content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; margin-top: -5px; pointer-events: none;
+  border-right: 2px solid var(--dc-muted); border-bottom: 2px solid var(--dc-muted); transform: rotate(45deg);
+}
+.dc-picker select:hover { border-color: color-mix(in srgb, var(--dc-ink) 25%, transparent); }
+.dc-picker select:focus-visible { outline: 2px solid var(--dc-green); outline-offset: 2px; }
+@media (max-width: 480px) { .dc-picker, .dc-picker select { width: 100%; max-width: none; } }
+
+/* ---------- single-stock summary ---------- */
+.dc-stock {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 28px; align-items: center;
+  margin: -8px 0 28px; padding: 18px 20px; border: 1px solid var(--dc-line); border-radius: var(--dc-radius);
+  background: var(--dc-surface);
+}
+.dc-stock__id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.dc-stock__id h2 { margin: 0; color: var(--dc-ink); font-size: 20px; font-weight: 800; letter-spacing: -0.03em; }
+.dc-stock__id p { margin: 0; font-size: 13px; color: var(--dc-muted); }
+.dc-stock__facts { grid-column: 1; display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 0; }
+.dc-stock__facts dt { font-size: 12px; color: var(--dc-muted); }
+.dc-stock__facts dd { margin: 2px 0 0; color: var(--dc-ink); font-weight: 700; font-size: 16px; }
+.dc-stock__facts small { display: block; font-weight: 400; font-size: 12px; color: var(--dc-muted); }
+.dc-link--plain { text-decoration: none; color: inherit; font-weight: inherit; text-align: left; }
+.dc-link--plain:hover { color: var(--dc-green-ink); }
+.dc-faint { color: var(--dc-muted); font-weight: 400; font-size: 14px; }
+.dc-stock__years { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: flex-end; gap: 10px; height: 104px; }
+.dc-stock__bar { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 44px; height: 100%; }
+.dc-stock__track { flex: 1; width: 22px; display: flex; align-items: flex-end; }
+.dc-stock__track i { display: block; width: 100%; border-radius: 4px 4px 2px 2px; background: var(--dc-green); }
+.dc-stock__bar b { font-size: 12px; color: var(--dc-ink); }
+.dc-stock__bar small { font-size: 11px; color: var(--dc-muted); line-height: 1; }
+.dc-stock__actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 720px) {
+  .dc-stock { grid-template-columns: 1fr; padding: 16px; }
+  .dc-stock__years { grid-column: 1; grid-row: auto; height: 88px; }
+}
+
+/* ---------- year view ---------- */
+.dc-year { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 960px) { .dc-year { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .dc-year { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+.dc-mini { border: 1px solid var(--dc-line); border-radius: 12px; padding: 10px 10px 12px; min-width: 0; }
+.dc-mini.is-current { border-color: var(--dc-ink); }
+.dc-mini__head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px; width: 100%;
+  margin: 0 0 6px; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; text-align: left;
+}
+.dc-mini__head:hover { background: var(--dc-surface); }
+.dc-mini__name { color: var(--dc-ink); font-weight: 700; font-size: 14px; }
+.dc-mini.is-quiet .dc-mini__name { color: var(--dc-muted); }
+.dc-mini__sum { font-size: 11px; color: var(--dc-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-mini__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.dc-mini__wd { font-size: 10px; color: var(--dc-faint); text-align: center; padding-bottom: 2px; }
+.dc-mini__d {
+  position: relative; display: grid; place-items: center; aspect-ratio: 1; min-width: 0;
+  font-size: 11px; line-height: 1; color: var(--dc-body); border-radius: 6px; border: 0; padding: 0; background: transparent;
+}
+.dc-mini__d.is-past { color: var(--dc-faint); }
+.dc-mini__d.is-today { box-shadow: inset 0 0 0 1.5px var(--dc-ink); color: var(--dc-ink); font-weight: 700; }
+.dc-mini__d--ev { font-weight: 700; cursor: pointer; background: var(--dc-grey-bg); color: var(--dc-grey-ink); }
+.dc-mini__d--lastbuy { background: var(--dc-amber); color: #3b2300; }
+.dc-mini__d--pay { background: var(--dc-green); color: #052e14; }
+.dc-mini__d--ev.is-past { background: var(--dc-grey-bg); color: var(--dc-muted); }
+.dc-mini__d--lastbuy.is-past { background: var(--dc-amber-bg); color: var(--dc-amber-ink); }
+.dc-mini__d--pay.is-past { background: var(--dc-green-bg); color: var(--dc-green-ink); }
+.dc-mini__d--ev.is-expected { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; color: var(--dc-muted); }
+.dc-mini__d--lastbuy.is-expected { color: var(--dc-amber-ink); }
+.dc-mini__d--pay.is-expected { color: var(--dc-green-ink); }
+.dc-mini__d--ev:hover { filter: brightness(0.94); }
+.dc-mini__more { position: absolute; top: 2px; right: 2px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.7; }
+.dc-yearview__key { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 0; font-size: 12px; color: var(--dc-body); }
+.dc-yearview__key span { display: inline-flex; align-items: center; gap: 6px; }
+.dc-key--past { background: var(--dc-green-bg); box-shadow: inset 0 0 0 1px var(--dc-green-line); }
+.dc-key { width: 12px; height: 12px; border-radius: 3px; }
+.dc-key--lastbuy { background: var(--dc-amber); }
+.dc-key--pay { background: var(--dc-green); }
+.dc-key--other { background: var(--dc-grey-bg); box-shadow: inset 0 0 0 1px var(--dc-line); }
+.dc-key--expected { box-shadow: inset 0 0 0 1.5px var(--dc-muted); }

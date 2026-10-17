@@ -18,6 +18,11 @@ const fmtDate = (s, opts = { day: 'numeric', month: 'short' }) =>
 const fmtLong = (s) => fmtDate(s, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const relDays = (n) => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : n === -1 ? 'yesterday' : n > 0 ? `in ${n} days` : `${-n} days ago`);
 
+function urlSymbol() {
+  const q = new URLSearchParams(window.location.search).get('symbol');
+  return q ? q.toUpperCase() : null;
+}
+
 function urlToday() {
   const q = new URLSearchParams(window.location.search).get('today');
   return q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : todayISO();
@@ -102,7 +107,7 @@ function Sheet({ title, onClose, children, labelledBy }) {
 }
 
 // ---------- hero ----------
-function Hero({ events, today, splits, onOpen, overdue }) {
+function Hero({ events, today, splits, onOpen, overdue, single }) {
   const upcoming = events.filter((e) => e.date >= today);
   const declared = upcoming.filter((e) => !e.dividend.expected);
   const buy = declared.find((e) => e.type === 'lastbuy');
@@ -123,12 +128,19 @@ function Hero({ events, today, splits, onOpen, overdue }) {
   } else if (expected) {
     const d = expected.dividend;
     const when = relDays(daysBetween(today, expected.date));
-    lead = <>No dividend is declared for the weeks ahead. <b>{d.symbol}</b> is likely next.</>;
-    sub = `Last year ${d.symbol} paid ${formatAmount(d.based_on?.amount, d.currency)} a share on ${fmtDate(d.based_on?.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}. If it keeps to that cycle, ${expected.type === 'announce' ? `expect an announcement ${when}` : `payment would land ${when}`}.`;
+    lead = single
+      ? <><b>{d.symbol}</b> hasn't announced its next dividend.</>
+      : <>No dividend is declared for the weeks ahead. <b>{d.symbol}</b> is likely next.</>;
+    sub = `Last time ${d.symbol} paid ${formatAmount(d.based_on?.amount, d.currency)} a share on ${fmtDate(d.based_on?.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}. If it keeps to that cycle, ${expected.type === 'announce' ? `expect an announcement ${when}` : `payment would land ${when}`}.`;
     target = expected;
   } else {
-    lead = <>No dividends on the calendar yet.</>;
-    sub = 'New declarations appear here as companies announce them.';
+    if (single && overdue.length) {
+      lead = <><b>{single}</b> is later than usual this year.</>;
+      sub = `${overdue[0].notes} Its dates appear here as soon as it's declared.`;
+    } else {
+      lead = single ? <>No upcoming dividend for <b>{single}</b>.</> : <>No dividends on the calendar yet.</>;
+      sub = 'New declarations appear here as companies announce them.';
+    }
   }
   return (
     <section className="dc-hero" aria-live="polite">
@@ -137,7 +149,7 @@ function Hero({ events, today, splits, onOpen, overdue }) {
         {sub}{' '}
         {target && <button type="button" className="dc-link" onClick={() => onOpen(target.dividend)}>See all dates</button>}
       </p>
-      {overdue.length > 0 && (
+      {overdue.length > 0 && !single && (
         <p className="dc-hero__overdue">
           Usually declared by now, not announced yet:{' '}
           {overdue.map((d, i) => (
@@ -204,6 +216,162 @@ function MonthGrid({ month, events, today, selected, onSelectDay, onOpen }) {
   );
 }
 
+// ---------- year grid ----------
+const TYPE_RANK = { lastbuy: 0, pay: 1, ex: 2, record: 3, agm: 4, announce: 5 };
+
+function MiniMonth({ y, m, byDay, today, onPickDay, onPickMonth }) {
+  const first = new Date(Date.UTC(y, m, 1));
+  const lead = (first.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const monthEvents = Object.entries(byDay).filter(([d]) => d.startsWith(key)).flatMap(([, v]) => v);
+  const pays = monthEvents.filter((e) => e.type === 'pay').length;
+  const buys = monthEvents.filter((e) => e.type === 'lastbuy').length;
+  const isCurrent = today.startsWith(key);
+  const summary = [buys && `${buys} last buy`, pays && `${pays} paid`].filter(Boolean).join(', ');
+
+  return (
+    <section className={`dc-mini${isCurrent ? ' is-current' : ''}${monthEvents.length ? '' : ' is-quiet'}`} aria-label={`${MONTHS[m]} ${y}`}>
+      <button type="button" className="dc-mini__head" onClick={() => onPickMonth(m)}>
+        <span className="dc-mini__name">{MONTHS[m]}</span>
+        <span className="dc-mini__sum">{summary || (monthEvents.length ? `${monthEvents.length} date${monthEvents.length > 1 ? 's' : ''}` : '')}</span>
+      </button>
+      <div className="dc-mini__grid">
+        {WEEKDAYS.map((w) => <span key={w} className="dc-mini__wd" aria-hidden="true">{w[0]}</span>)}
+        {cells.map((iso, i) => {
+          if (!iso) return <span key={`x${i}`} aria-hidden="true" />;
+          const evs = byDay[iso] || [];
+          const n = Number(iso.slice(8));
+          if (!evs.length) {
+            return <span key={iso} className={`dc-mini__d${iso === today ? ' is-today' : ''}${iso < today ? ' is-past' : ''}`}>{n}</span>;
+          }
+          const top = [...evs].sort((a, b) => TYPE_RANK[a.type] - TYPE_RANK[b.type])[0];
+          const allExpected = evs.every((e) => e.dividend.expected);
+          const label = `${fmtLong(iso)}: ${evs.map((e) => `${e.dividend.symbol} ${EVENT_TYPES[e.type].label.toLowerCase()}${e.dividend.expected ? ' (expected)' : ''}`).join(', ')}`;
+          return (
+            <button key={iso} type="button" title={label} aria-label={label} onClick={() => onPickDay(iso)}
+              className={`dc-mini__d dc-mini__d--ev dc-mini__d--${top.type}${allExpected ? ' is-expected' : ''}${iso === today ? ' is-today' : ''}${iso < today ? ' is-past' : ''}`}>
+              {n}
+              {evs.length > 1 && <i className="dc-mini__more" aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function YearGrid({ year, events, today, onPickDay, onPickMonth }) {
+  const byDay = useMemo(() => {
+    const map = {};
+    for (const e of events) if (e.date.startsWith(String(year))) (map[e.date] ||= []).push(e);
+    return map;
+  }, [events, year]);
+  return (
+    <div className="dc-year">
+      {MONTHS.map((_, m) => (
+        <MiniMonth key={m} y={year} m={m} byDay={byDay} today={today} onPickDay={onPickDay} onPickMonth={onPickMonth} />
+      ))}
+    </div>
+  );
+}
+
+// ---------- stock picker ----------
+function StockPicker({ value, onChange, stocks, watchlist }) {
+  return (
+    <label className="dc-picker">
+      <span className="dc-sr">Stock</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="all">All dividend payers ({stocks.length})</option>
+        {watchlist.length > 0 && <option value="mine">My stocks ({watchlist.length})</option>}
+        <optgroup label="One stock">
+          {stocks.map((st) => (
+            <option key={st.symbol} value={st.symbol}>{st.symbol} · {st.name}</option>
+          ))}
+        </optgroup>
+      </select>
+    </label>
+  );
+}
+
+function StockSummary({ symbol, declared, all, today, splits, inWatch, toggleWatch, onOpen, onSubscribe }) {
+  const mine = declared.filter((d) => d.symbol === symbol);
+  const any = mine[0] || all.find((d) => d.symbol === symbol);
+  if (!any) return null;
+  const currency = any.currency || 'TZS';
+  const paid = mine.filter((d) => d.pay_date && d.pay_date <= today).sort((a, b) => (a.pay_date < b.pay_date ? 1 : -1));
+  const last = paid[0];
+  const next = all
+    .filter((d) => d.symbol === symbol && !d.stale && (d.pay_date || '') > today)
+    .sort((a, b) => (a.pay_date < b.pay_date ? -1 : 1))[0];
+  // Per-share cash by calendar year of payment, restated for later splits.
+  const byYear = {};
+  for (const d of mine) if (d.pay_date) byYear[d.pay_date.slice(0, 4)] = (byYear[d.pay_date.slice(0, 4)] || 0) + adjustedAmount(d, splits);
+  const years = Object.keys(byYear).sort();
+  const lastYear = String(Number(today.slice(0, 4)) - 1);
+  const trailing = mine
+    .filter((d) => d.pay_date && d.pay_date <= today && d.pay_date > `${lastYear}${today.slice(4)}`)
+    .reduce((t, d) => t + adjustedAmount(d, splits), 0);
+  const price = any.price;
+  const yieldPct = price && currency === 'TZS' && trailing ? (trailing / price) * 100 : null;
+  const overdue = all.find((d) => d.symbol === symbol && d.stale);
+
+  return (
+    <section className="dc-stock" aria-label={`${symbol} dividends`}>
+      <div className="dc-stock__id">
+        <StockMark symbol={symbol} size={44} />
+        <div>
+          <h2>{symbol}</h2>
+          <p>{any.name || symbol}{price ? `, ${formatAmount(price)} last close` : ''}</p>
+        </div>
+      </div>
+      <dl className="dc-stock__facts">
+        <div>
+          <dt>Last paid</dt>
+          <dd>{last
+            ? <button type="button" className="dc-link dc-link--plain" onClick={() => onOpen(last)}>{formatAmount(adjustedAmount(last, splits), currency)}<small> on {fmtDate(last.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}</small></button>
+            : <span className="dc-faint">Nothing on record</span>}</dd>
+        </div>
+        <div>
+          <dt>Next</dt>
+          <dd>{next
+            ? <button type="button" className="dc-link dc-link--plain" onClick={() => onOpen(next)}>{next.expected ? 'Expected ' : ''}{fmtDate(next.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}<small> {next.expected ? `if it repeats ${formatAmount(next.based_on?.amount, currency)}` : formatAmount(adjustedAmount(next, splits), currency)}</small></button>
+            : <span className="dc-faint">{overdue ? 'Overdue, not announced yet' : 'Not announced'}</span>}</dd>
+        </div>
+        {yieldPct != null && (
+          <div>
+            <dt>Paid in the last 12 months</dt>
+            <dd>{formatAmount(trailing, currency)}<small> {yieldPct.toFixed(1)}% of today's price</small></dd>
+          </div>
+        )}
+      </dl>
+      {years.length > 0 && (
+        <div className="dc-stock__years" aria-label="Paid per share by year">
+          {years.map((y) => {
+            const max = Math.max(...years.map((k) => byYear[k]));
+            return (
+              <div key={y} className="dc-stock__bar">
+                <span className="dc-stock__track"><i style={{ height: `${Math.max(8, (byYear[y] / max) * 100)}%` }} /></span>
+                <b>{formatAmount(byYear[y], currency).replace(`${currency} `, '')}</b>
+                <small>{y}</small>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="dc-stock__actions">
+        <button type="button" className="dc-btn dc-btn--small" onClick={onSubscribe}>Subscribe to {symbol} dates</button>
+        <button type="button" className="dc-btn dc-btn--small dc-btn--ghost" aria-pressed={inWatch} onClick={() => toggleWatch(symbol)}>
+          {inWatch ? 'In my stocks' : 'Add to my stocks'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function EventRow({ e, today, splits, onOpen }) {
   const d = e.dividend;
   const n = daysBetween(today, e.date);
@@ -245,7 +413,7 @@ function Agenda({ events, today, splits, onOpen, showPast, setShowPast }) {
       {!showPast && events.some((e) => e.date < today) && (
         <button type="button" className="dc-link dc-agenda__past" onClick={() => setShowPast(true)}>Show earlier dates</button>
       )}
-      {groups.length === 0 && <p className="dc-empty">Nothing coming up for these stocks. Add more to your list, or turn on expected dividends.</p>}
+      {groups.length === 0 && <p className="dc-empty">Nothing coming up here. Pick another stock, show earlier dates, or turn on expected dividends.</p>}
       {groups.map((g) => (
         <section key={g.key} className="dc-agenda__month">
           <h3>{MONTHS[Number(g.key.slice(5)) - 1]} {g.key.slice(0, 4)}</h3>
@@ -328,12 +496,12 @@ function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
 }
 
 // ---------- subscribe ----------
-function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected }) {
-  const [scope, setScope] = useState(watchlist.length ? 'mine' : 'all');
+function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected, symbol }) {
+  const [scope, setScope] = useState(symbol ? 'one' : watchlist.length ? 'mine' : 'all');
   const [types, setTypes] = useState(DEFAULT_FEED_TYPES);
   const [expected, setExpected] = useState(includeExpected);
   const [copied, setCopied] = useState(false);
-  const symbols = scope === 'mine' ? watchlist : [];
+  const symbols = scope === 'one' && symbol ? [symbol] : scope === 'mine' ? watchlist : [];
   const params = new URLSearchParams();
   if (symbols.length) params.set('symbols', symbols.join(','));
   params.set('types', types.join(','));
@@ -350,6 +518,7 @@ function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected }) {
 
       <fieldset className="dc-field">
         <legend>Which stocks</legend>
+        {symbol && <label><input type="radio" name="scope" checked={scope === 'one'} onChange={() => setScope('one')} /> {symbol} only</label>}
         <label><input type="radio" name="scope" checked={scope === 'all'} onChange={() => setScope('all')} /> All {allSymbols.length} dividend payers</label>
         <label><input type="radio" name="scope" checked={scope === 'mine'} onChange={() => setScope('mine')} disabled={!watchlist.length} />
           My stocks{watchlist.length ? ` (${watchlist.join(', ')})` : ' (none added yet)'}</label>
@@ -387,8 +556,9 @@ export default function DividendCalendar() {
   const [view, setView] = useState(() => (window.matchMedia?.('(max-width: 640px)').matches ? 'list' : 'month'));
   const [month, setMonth] = useState(() => [Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1]);
   const [selectedDay, setSelectedDay] = useState(today);
-  const [scope, setScope] = useState('all');
   const [watchlist, setWatchlist] = useState(readWatchlist);
+  // 'all', 'mine', or a single symbol such as 'CRDB'.
+  const [scope, setScope] = useState(() => urlSymbol() || 'all');
   const [types, setTypes] = useState(DEFAULT_FEED_TYPES);
   const [includeExpected, setIncludeExpected] = useState(true);
   const [showPast, setShowPast] = useState(false);
@@ -403,9 +573,38 @@ export default function DividendCalendar() {
   const splits = data?.splits || [];
   const allDivs = useMemo(() => (data ? calendarDividends(data.dividends, { today, includeExpected, splits }) : []), [data, today, includeExpected, splits]);
   const allSymbols = useMemo(() => [...new Set((data?.dividends || []).map((d) => d.symbol))].sort(), [data]);
-  const scoped = useMemo(() => (scope === 'mine' ? allDivs.filter((d) => watchlist.includes(d.symbol)) : allDivs), [allDivs, scope, watchlist]);
+  const stocks = useMemo(() => allSymbols.map((sym) => ({ symbol: sym, name: (data.dividends.find((d) => d.symbol === sym) || {}).name || sym })), [allSymbols, data]);
+  const single = scope !== 'all' && scope !== 'mine' ? scope : null;
+  // An unknown ?symbol= (or a stock that has since dropped out) falls back to everything.
+  useEffect(() => { if (data && single && !allSymbols.includes(single)) setScope('all'); }, [data, single, allSymbols]);
+  const scoped = useMemo(() => (
+    scope === 'mine' ? allDivs.filter((d) => watchlist.includes(d.symbol))
+      : single ? allDivs.filter((d) => d.symbol === single)
+        : allDivs
+  ), [allDivs, scope, single, watchlist]);
   const events = useMemo(() => toEvents(scoped, { splits, types, today }), [scoped, splits, types, today]);
   const heroEvents = useMemo(() => toEvents(scoped, { splits, today }), [scoped, splits, today]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (single) url.searchParams.set('symbol', single); else url.searchParams.delete('symbol');
+    window.history.replaceState(null, '', url);
+  }, [single]);
+
+  const pickScope = (value) => {
+    setScope(value);
+    if (value === 'all' || value === 'mine' || !data) return;
+    // Stay put if this stock already has dates in the period on screen;
+    // otherwise move to where it has something to show.
+    const evs = toEvents(allDivs.filter((d) => d.symbol === value), { splits, types, today });
+    const onScreen = view === 'year' ? String(month[0]) : `${month[0]}-${String(month[1] + 1).padStart(2, '0')}`;
+    if (view !== 'list' && evs.some((e) => e.date.startsWith(onScreen))) return;
+    const target = evs.find((e) => e.date >= today) || evs[evs.length - 1];
+    if (target) {
+      setMonth([Number(target.date.slice(0, 4)), Number(target.date.slice(5, 7)) - 1]);
+      setSelectedDay(target.date);
+    }
+  };
 
   const closeDiv = useCallback(() => setOpenDiv(null), []);
   const closeSub = useCallback(() => setSubscribing(false), []);
@@ -415,6 +614,8 @@ export default function DividendCalendar() {
     return next;
   });
   const toggleType = (t) => setTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : TYPE_KEYS.filter((k) => k === t || cur.includes(k))));
+  const shiftYear = (n) => setMonth(([y, m]) => [y + n, m]);
+  const yearCount = events.filter((e) => e.date.startsWith(String(month[0]))).length;
   const shiftMonth = (n) => setMonth(([y, m]) => { const d = new Date(Date.UTC(y, m + n, 1)); return [d.getUTCFullYear(), d.getUTCMonth()]; });
   const dayEvents = events.filter((e) => e.date === selectedDay);
   const monthKey = `${month[0]}-${String(month[1] + 1).padStart(2, '0')}`;
@@ -435,20 +636,19 @@ export default function DividendCalendar() {
         {data?.notice && <p className="dc-banner">{data.notice}</p>}
         {error && <p className="dc-banner dc-banner--error">Couldn't load dividends: {error}. Refresh to try again.</p>}
 
-        {data && <Hero events={heroEvents} today={today} splits={splits} onOpen={setOpenDiv} overdue={scoped.filter((d) => d.stale)} />}
+        {data && <Hero events={heroEvents} today={today} splits={splits} onOpen={setOpenDiv} overdue={scoped.filter((d) => d.stale)} single={single} />}
+        {data && single && (
+          <StockSummary symbol={single} declared={data.dividends} all={allDivs} today={today} splits={splits}
+            inWatch={watchlist.includes(single)} toggleWatch={toggleWatch} onOpen={setOpenDiv} onSubscribe={() => setSubscribing(true)} />
+        )}
 
         <div className="dc-controls">
           <div className="dc-seg" role="group" aria-label="View">
             <button type="button" aria-pressed={view === 'month'} onClick={() => setView('month')}>Month</button>
+            <button type="button" aria-pressed={view === 'year'} onClick={() => setView('year')}>Year</button>
             <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
           </div>
-          <div className="dc-seg" role="group" aria-label="Stocks">
-            <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>All stocks</button>
-            <button type="button" aria-pressed={scope === 'mine'} onClick={() => setScope('mine')} disabled={!watchlist.length}
-              title={watchlist.length ? undefined : 'Open a dividend and add the stock to your list'}>
-              My stocks{watchlist.length ? ` (${watchlist.length})` : ''}
-            </button>
-          </div>
+          {data && <StockPicker value={scope} onChange={pickScope} stocks={stocks} watchlist={watchlist} />}
           <label className="dc-toggle">
             <input type="checkbox" checked={includeExpected} onChange={(e) => setIncludeExpected(e.target.checked)} />
             Show expected
@@ -485,6 +685,31 @@ export default function DividendCalendar() {
           </section>
         )}
 
+        {data && view === 'year' && (
+          <section className="dc-yearview" aria-label="Year view">
+            <div className="dc-month__nav">
+              <h2>{month[0]}</h2>
+              <span className="dc-month__count">{yearCount ? `${yearCount} date${yearCount > 1 ? 's' : ''}${single ? ` for ${single}` : ''}` : `Nothing in ${month[0]}${single ? ` for ${single}` : ''}`}</span>
+              <div className="dc-month__btns">
+                <button type="button" className="dc-icon" onClick={() => shiftYear(-1)} aria-label="Previous year">‹</button>
+                <button type="button" className="dc-btn dc-btn--small dc-btn--ghost" onClick={() => setMonth([Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1])}>This year</button>
+                <button type="button" className="dc-icon" onClick={() => shiftYear(1)} aria-label="Next year">›</button>
+              </div>
+            </div>
+            <YearGrid year={month[0]} events={events} today={today}
+              onPickMonth={(m) => { setMonth([month[0], m]); setView('month'); }}
+              onPickDay={(iso) => { setMonth([Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1]); setSelectedDay(iso); setView('month'); }} />
+            <p className="dc-yearview__key">
+              <span><i className="dc-key dc-key--lastbuy" />Last day to buy</span>
+              <span><i className="dc-key dc-key--pay" />Payment</span>
+              <span><i className="dc-key dc-key--other" />Other dates</span>
+              <span><i className="dc-key dc-key--past" />Already happened (paler)</span>
+              <span><i className="dc-key dc-key--expected" />Expected</span>
+              <span className="dc-faint">Pick a day or month to open it.</span>
+            </p>
+          </section>
+        )}
+
         {data && view === 'list' && (
           <Agenda events={events} today={today} splits={splits} onOpen={setOpenDiv} showPast={showPast} setShowPast={setShowPast} />
         )}
@@ -498,7 +723,7 @@ export default function DividendCalendar() {
         <DividendSheet div={openDiv} today={today} splits={splits} onClose={closeDiv}
           inWatch={watchlist.includes(openDiv.symbol)} toggleWatch={toggleWatch} />
       )}
-      {subscribing && <SubscribeSheet onClose={closeSub} watchlist={watchlist} allSymbols={allSymbols} includeExpected={includeExpected} />}
+      {subscribing && <SubscribeSheet onClose={closeSub} watchlist={watchlist} allSymbols={allSymbols} includeExpected={includeExpected} symbol={single} />}
     </div>
   );
 }
