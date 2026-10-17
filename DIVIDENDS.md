@@ -16,6 +16,10 @@ Page at `/dividends`, subscribable feed at `/dividends.ics`.
 - `netlify/functions/dividends-ics.mjs` — the feed. `?symbols=CRDB,NMB&types=lastbuy,pay&expected=1`
 - `npm run test:dividends` — checks derived dates against the CRDB, NMB and VODA notices, splits, ICS validity
 
+## Views and filters
+- **Month / Year / List** toggle. Year shows all twelve months; amber = last day to buy, green = payment, paler = already happened, dashed = expected. Tap a day or month name to open it in Month view.
+- **Stock picker**: all payers, "My stocks", or one stock. One stock adds a summary (last paid, next, last-12-months yield, paid per share by year) and a "Subscribe to … dates" shortcut. The choice is kept in the URL, so `/dividends?symbol=CRDB` links straight to CRDB.
+
 ## Adding a declaration
 ```sql
 insert into public.dividend
