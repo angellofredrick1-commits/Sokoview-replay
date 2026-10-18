@@ -5,7 +5,7 @@
 | Address | Page | Audience |
 |---|---|---|
 | `/` | About Sokoview, with a live board strip and a Sign in link to `/portfolio` (reads "Open your portfolio" when a session exists) | Everyone |
-| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends, highlights, buying activity, comparison with the DSE, AI insight. Needs migrations 0010 + 0011 and Supabase Auth (see below) | Investors |
+| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends, highlights, money in vs value now, buying activity, AI insight. Needs migration 0010 and Supabase Auth (see below) | Investors |
 | `/market` | Market close and the grid of every listed share (each tile opens `/stock`), upcoming dividends, climbers since Jan 2025 (was the home page) | Investors |
 | `/dividends` | Dividend calendar. Deep link: `/dividends?symbol=CRDB` | Investors |
 | `/replay` | Replay. Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
@@ -146,18 +146,15 @@ Everything else is worked out in the browser by `src/lib/portfolio.js` (tests: `
 - dividends: entitled if held at the close before the ex-date; paid, due, and expected amounts after 5% tax;
 - a sell can't exceed the shares held on its date, and a buy that a later sell depends on can't be deleted;
 - highlights (top performer, weakest, biggest contributor, largest holding) and buying activity by month;
-- **against the DSE**: the same shillings go into a DSE benchmark on the same trade dates (and come out on sale dates),
-  so the comparison is money-weighted, with annual rates (XIRR). The benchmark (migration 0011) is a chain-linked,
-  market-value-weighted index of the Tanzanian-listed companies, like the TSI, price only, base 1000 on 29 Aug 2016;
-  `index_member` holds the share counts, update them when a company issues shares;
+- **money in vs value now**: what went in, what came out on sales, what's held now, the return in % and a year
+  (money-weighted, XIRR), with a month-end chart built from `price_adjusted` (already public, no migration needed);
 - **AI insight**: `netlify/functions/portfolio-insight.mjs` sends a numeric summary (symbols, amounts, returns; never the
-  email) to Claude Haiku and gets back 2–3 plain-language observations. Cached in the browser for a day.
+  email) to Claude Haiku and gets back 2–3 plain-language observations about the return over the period and what drove it. Cached in the browser for a day.
 
 Trades are private: row-level security means a user can only read and change their own rows.
 
 **To switch it on**
-1. Run `supabase/migrations/0010_portfolio.sql`, then `0011_market_benchmark.sql`, in the SQL editor.
-   Without 0011 the page still works and shows a note where the DSE comparison would be.
+1. Run `supabase/migrations/0010_portfolio.sql` in the SQL editor.
 1. Netlify → Site configuration → Environment variables: set `ANTHROPIC_API_KEY` (already needed for Replay insights).
    Without it, the AI insight card says it isn't switched on.
 2. Supabase → Authentication → URL Configuration: set the Site URL to the live site and add `https://<your-site>/portfolio` to Redirect URLs (plus `http://localhost:5173/portfolio` for local work).

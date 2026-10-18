@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { Sparkles } from 'lucide-react';
 import { SvMark, stockHref } from './nav/SiteNav.jsx';
-import { activity, performers, valueHistory, vsBenchmark } from './lib/portfolio.js';
-import { SetupError, indexAt, indexMonthly, monthlyCloses, portfolioInsight } from './lib/portfolioData.js';
+import { valueHistory } from './lib/portfolio.js';
+import { monthlyCloses, portfolioInsight } from './lib/portfolioData.js';
 
 const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const tzs = (n) => (n == null || !Number.isFinite(n) ? '—' : `TZS ${nf0.format(Math.round(n))}`);
@@ -29,9 +29,9 @@ const tooltipStyle = {
 const axis = { tick: { fontSize: 11.5, fill: 'var(--sv-chart-axis)' }, axisLine: false, tickLine: false };
 
 // ---------------------------------------------------------------------------
-// Data: benchmark comparison + value history (needs migration 0011)
+// Data: month-end value of the portfolio (prices from price_adjusted)
 // ---------------------------------------------------------------------------
-export function useBenchmark(trades, { splits, today, value, dividendRows, dividendsReceived }) {
+export function useValueHistory(trades, { splits, today }) {
   const [raw, setRaw] = useState({ status: 'loading' });
   const key = useMemo(() => trades.map((t) => `${t.id}:${t.symbol}:${t.side}:${t.trade_date}:${t.shares}:${t.price}:${t.fees}`).join('|'), [trades]);
 
@@ -40,86 +40,75 @@ export function useBenchmark(trades, { splits, today, value, dividendRows, divid
     let live = true;
     const first = trades.reduce((d, t) => (t.trade_date < d ? t.trade_date : d), today);
     const symbols = [...new Set(trades.map((t) => t.symbol))];
-    setRaw((r) => ({ ...r, status: r.status === 'ok' ? 'ok' : 'loading' }));
-    Promise.all([
-      indexAt([...trades.map((t) => t.trade_date), today]),
-      indexMonthly(`${first.slice(0, 7)}-01`),
-      monthlyCloses(symbols, `${first.slice(0, 7)}-01`),
-    ]).then(([at, monthly, closes]) => {
-      if (!live) return;
-      const last = monthly[monthly.length - 1];
-      setRaw({
-        status: 'ok', at, closes,
-        monthly: Object.fromEntries(monthly.map((m) => [m.date.slice(0, 7), m.level])),
-        now: at[today] ? { date: last?.date ?? today, level: at[today] } : null,
-      });
-    }).catch((e) => live && setRaw({ status: e instanceof SetupError ? 'missing' : 'error', message: e.message }));
+    monthlyCloses(symbols, `${first.slice(0, 7)}-01`)
+      .then((closes) => live && setRaw({ status: 'ok', closes }))
+      .catch((e) => live && setRaw({ status: 'error', message: e.message }));
     return () => { live = false; };
   }, [key, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return useMemo(() => {
-    if (raw.status !== 'ok') return raw;
-    const vb = vsBenchmark(trades, { splits, value, today, indexAt: raw.at, indexNow: raw.now, dividendsReceived, dividendRows });
-    const history = valueHistory(trades, { splits, closes: raw.closes, indexMonthly: raw.monthly, indexAt: raw.at, today });
-    return { status: vb ? 'ok' : 'error', vb, history };
-  }, [raw, trades, splits, value, today, dividendRows, dividendsReceived]);
+  return useMemo(() => (raw.status !== 'ok' ? raw
+    : { status: 'ok', history: valueHistory(trades, { splits, closes: raw.closes, today }) }), [raw, trades, splits, today]);
 }
 
+const since = (iso) => {
+  const [y, m] = iso.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${y}`;
+};
+
 // ---------------------------------------------------------------------------
-// Against the DSE benchmark
+// Money in vs value now
 // ---------------------------------------------------------------------------
-export function BenchmarkCard({ bench }) {
-  if (bench.status === 'loading') return <section className="pf-card pf-ana pf-ana--chart"><div className="pf-skel pf-skel--chart" aria-hidden="true" /></section>;
-  if (bench.status === 'missing') {
-    return (
-      <section className="pf-card pf-ana pf-ana--chart">
-        <h2>Against the DSE</h2>
-        <p className="pf-empty">The DSE benchmark isn’t set up yet: run <code>supabase/migrations/0011_market_benchmark.sql</code>.</p>
-      </section>
-    );
-  }
-  if (bench.status !== 'ok') {
-    return <section className="pf-card pf-ana pf-ana--chart"><h2>Against the DSE</h2><p className="pf-empty">Couldn’t load the DSE benchmark. Refresh to try again.</p></section>;
-  }
-  const { vb, history } = bench;
-  const ahead = vb.edge >= 0;
-  const last = history[history.length - 1];
+export function GrowthCard({ ret, hist }) {
+  if (!ret) return null;
+  // Today's point uses the same prices as the summary above, so the line ends where the numbers say.
+  const history = (hist.status === 'ok' ? hist.history : [])
+    .map((h, i, all) => (i === all.length - 1 ? { ...h, value: Math.round(ret.value) } : h));
   const showYear = history.length > 12;
-  const summary = `Your portfolio is worth ${tzs(vb.value)}; the same money in the DSE benchmark would be worth ${tzs(vb.benchValue)}.`;
+  const summary = `You put in ${tzs(ret.invested)}${ret.takenOut ? ` and took out ${tzs(ret.takenOut)}` : ''} since ${since(ret.first)}; what you hold is worth ${tzs(ret.value)} now.`;
   return (
-    <section className="pf-card pf-ana pf-ana--chart" aria-labelledby="pf-h-bench">
+    <section className="pf-card pf-ana pf-ana--chart" aria-labelledby="pf-h-growth">
       <div className="pf-ana__head">
-        <h2 id="pf-h-bench">Against the DSE</h2>
-        <span className={`pf-chip ${ahead ? 'is-up' : 'is-down'}`}>{ahead ? 'Ahead' : 'Behind'} by {tzs(Math.abs(vb.edge))}</span>
+        <h2 id="pf-h-growth">Money in vs value now</h2>
+        <span className={`pf-chip ${tone(ret.gain)}`}>{signed(ret.gain)} since {since(ret.first)}</span>
       </div>
-      <dl className="pf-vs">
-        <div><dt><i className="pf-key pf-key--1" />You</dt><dd className={tone(vb.gainYou)}>{signed(vb.gainYou)} <small>{pct(vb.gainYouPct)}</small></dd>
-          {vb.annualYou != null && <dd className="pf-vs__sub">{pct(vb.annualYou)} a year{vb.annualYouWithDividends != null ? `, ${pct(vb.annualYouWithDividends)} with dividends` : ''}</dd>}</div>
-        <div><dt><i className="pf-key pf-key--2" />Same money in the DSE</dt><dd className={tone(vb.gainIdx)}>{signed(vb.gainIdx)} <small>{pct(vb.gainIdxPct)}</small></dd>
-          {vb.annualIdx != null && <dd className="pf-vs__sub">{pct(vb.annualIdx)} a year</dd>}</div>
+      <dl className="pf-vs pf-vs--3">
+        <div><dt><i className="pf-key pf-key--ref" />Money in</dt><dd>{tzs(ret.netIn)}</dd>
+          <dd className="pf-vs__sub">{ret.takenOut ? `${tzs(ret.invested)} in, ${tzs(ret.takenOut)} out` : `over ${ret.days} days`}</dd></div>
+        <div><dt><i className="pf-key pf-key--1" />Value now</dt><dd>{tzs(ret.value)}</dd>
+          <dd className="pf-vs__sub">at the last close</dd></div>
+        <div><dt>Return</dt><dd className={tone(ret.gainPct)}>{pct(ret.gainPct)}</dd>
+          <dd className="pf-vs__sub">{ret.annual != null
+            ? `${pct(ret.annual)} a year${ret.dividendsReceived > 0 && ret.annualWithDividends != null ? `, ${pct(ret.annualWithDividends)} with dividends` : ''}`
+            : `too early for a yearly rate${ret.dividendsReceived > 0 ? `; ${pct(ret.gainWithDividendsPct)} with dividends` : ''}`}</dd></div>
       </dl>
+      {hist.status === 'loading' && <div className="pf-skel pf-skel--chart" aria-hidden="true" />}
+      {hist.status === 'error' && <p className="pf-empty">Couldn’t load past prices for the chart. Refresh to try again.</p>}
       {history.length >= 2 && (
         <div className="pf-chart" role="img" aria-label={summary}>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={history} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <ResponsiveContainer width="100%" height={230}>
+            <ComposedChart data={history} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="pf-value-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--sv-series-1)" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="var(--sv-series-1)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid stroke="var(--sv-chart-grid)" vertical={false} />
               <XAxis dataKey="month" tickFormatter={(m) => monthLabel(m, showYear)} minTickGap={28} {...axis} />
               <YAxis tickFormatter={compact} width={44} {...axis} />
               <Tooltip {...tooltipStyle} labelFormatter={(m) => monthLabel(m, true)}
-                formatter={(v, name) => [tzs(v), { portfolio: 'Your portfolio', benchmark: 'Same money in the DSE', invested: 'Money in' }[name]]} />
+                formatter={(v, name) => [tzs(v), name === 'value' ? 'Value' : 'Money in']} />
+              <Area type="monotone" dataKey="value" stroke="var(--sv-series-1)" strokeWidth={2} fill="url(#pf-value-fill)" dot={false} isAnimationActive={false} connectNulls />
               <Line type="stepAfter" dataKey="invested" stroke="var(--sv-chart-axis)" strokeWidth={1.5} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="benchmark" stroke="var(--sv-series-2)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
-              <Line type="monotone" dataKey="portfolio" stroke="var(--sv-series-1)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
           <p className="pf-legend">
-            <span><i className="pf-key pf-key--1" />Your portfolio {last?.portfolio != null && <b>{compact(last.portfolio)}</b>}</span>
-            <span><i className="pf-key pf-key--2" />Same money in the DSE {last?.benchmark != null && <b>{compact(last.benchmark)}</b>}</span>
-            <span><i className="pf-key pf-key--ref" />Money in</span>
+            <span><i className="pf-key pf-key--1" />Value of what you held</span>
+            <span><i className="pf-key pf-key--ref" />Money in (buys minus sales)</span>
           </p>
         </div>
       )}
-      <p className="pf-fine">Benchmark: every Tanzanian-listed company weighted by market value, like the TSI. Price only, so the fair comparison leaves your dividends out; they’re added separately above.</p>
+      <p className="pf-fine">Return = value now plus money taken out on sales, minus everything you put in, fees included. “A year” weights each shilling by how long it was invested.</p>
     </section>
   );
 }
@@ -127,26 +116,26 @@ export function BenchmarkCard({ bench }) {
 // ---------------------------------------------------------------------------
 // AI insight
 // ---------------------------------------------------------------------------
-export function buildInsightSummary({ today, s, perf, act, bench, names }) {
+export function buildInsightSummary({ today, s, perf, act, ret, names }) {
   const r = (n) => (n == null || !Number.isFinite(n) ? null : Math.round(n));
   const r1 = (n) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10) / 10);
   return {
     asOf: today,
+    period: ret ? {
+      firstTrade: ret.first, days: ret.days,
+      putInTZS: r(ret.invested), takenOutOnSalesTZS: r(ret.takenOut), valueNowTZS: r(ret.value),
+      gainTZS: r(ret.gain), returnPct: r1(ret.gainPct), annualPct: r1(ret.annual),
+      dividendsReceivedTZS: r(ret.dividendsReceived), returnWithDividendsPct: r1(ret.gainWithDividendsPct), annualWithDividendsPct: r1(ret.annualWithDividends),
+    } : null,
     holdings: s.holdings.map((h) => ({
       symbol: h.symbol, company: names[h.symbol] || h.symbol,
       weightPct: r1(perf?.weights?.[h.symbol]), gainPct: r1(h.unrealisedPct), gainTZS: r(h.unrealised), heldSince: h.firstDate,
     })),
     totals: {
-      valueTZS: r(s.totals.value), costTZS: r(s.totals.cost), gainPct: r1(s.totals.unrealisedPct),
-      realisedOnSalesTZS: r(s.totals.realised), dividendsReceivedTZS: r(s.totals.dividendsReceived), dividendsNext12mTZS: r(s.totals.dividendsNext12m),
+      costOfHoldingsTZS: r(s.totals.cost), unrealisedGainPct: r1(s.totals.unrealisedPct),
+      realisedOnSalesTZS: r(s.totals.realised), dividendsNext12mTZS: r(s.totals.dividendsNext12m),
     },
-    benchmark: bench?.status === 'ok' ? {
-      description: 'Same shillings into the DSE benchmark on the same trade dates; price only',
-      investedTZS: r(bench.vb.invested), yourGainTZS: r(bench.vb.gainYou), benchmarkGainTZS: r(bench.vb.gainIdx), differenceTZS: r(bench.vb.edge),
-      yourGainPct: r1(bench.vb.gainYouPct), benchmarkGainPct: r1(bench.vb.gainIdxPct),
-      yourAnnualPct: r1(bench.vb.annualYou), yourAnnualWithDividendsPct: r1(bench.vb.annualYouWithDividends), benchmarkAnnualPct: r1(bench.vb.annualIdx),
-    } : null,
-    activity: act ? { trades: act.trades, buys: act.buys, sells: act.sells, firstTrade: act.first, lastTrade: act.last, monthsWithBuys: act.activeMonths, mostBought: act.mostBought?.symbol ?? null } : null,
+    activity: act ? { trades: act.trades, buys: act.buys, sells: act.sells, lastTrade: act.last, monthsWithBuys: act.activeMonths, mostBought: act.mostBought?.symbol ?? null } : null,
     best: perf?.best ? { symbol: perf.best.symbol, gainPct: r1(perf.best.unrealisedPct) } : null,
     weakest: perf?.worst ? { symbol: perf.worst.symbol, gainPct: r1(perf.worst.unrealisedPct) } : null,
   };

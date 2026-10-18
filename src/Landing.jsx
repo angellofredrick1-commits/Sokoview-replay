@@ -64,9 +64,9 @@ function VsArt() {
   return (
     <svg viewBox="0 0 240 120" className="ld-art" aria-hidden="true">
       <path d="M8 104 H232" stroke="var(--sv-line)" />
-      <path d="M8 96 L48 92 L88 80 L128 84 L168 60 L208 44 L232 30" fill="none" stroke="var(--sv-series-1)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8 96 L48 94 L88 88 L128 86 L168 76 L208 70 L232 64" fill="none" stroke="var(--sv-series-2)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8 98 H64 V90 H140 V84 H232" fill="none" stroke="var(--sv-chart-axis)" strokeWidth="1.5" strokeDasharray="4 4" />
+      <path d="M8 94 L48 90 L88 74 L128 78 L168 52 L208 40 L232 26 V104 H8 Z" fill="var(--sv-accent-soft)" />
+      <path d="M8 94 L48 90 L88 74 L128 78 L168 52 L208 40 L232 26" fill="none" stroke="var(--sv-series-1)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 96 H64 V86 H140 V76 H232" fill="none" stroke="var(--sv-chart-axis)" strokeWidth="1.5" strokeDasharray="4 4" />
     </svg>
   );
 }
@@ -106,8 +106,8 @@ function ReplayArt() {
 
 const FEATURES = [
   {
-    key: 'portfolio', href: '/portfolio', Icon: TrendingUp, title: 'Your portfolio, against the DSE',
-    body: 'Enter your buys and sells; the price fills in from the date. See your gain, your dividends, your best and weakest holdings, and how the same money would have done in the whole market.',
+    key: 'portfolio', href: '/portfolio', Icon: TrendingUp, title: 'What your money has really earned',
+    body: 'Enter your buys and sells; the price fills in from the date. See what you put in against what it’s worth now, your dividends, your best and weakest holdings, and a plain-language summary.',
     Art: VsArt,
   },
   {
@@ -158,7 +158,7 @@ export default function Landing() {
           <p className="ld-eyebrow">For investors on the Dar es Salaam Stock Exchange</p>
           <h1 className="ld-display">Know how your shares are really doing.</h1>
           <p className="ld-lede">
-            Sokoview tracks your DSE portfolio, measures it against the whole market, and keeps every dividend date in view. Free, in plain language, built in Tanzania.
+            Sokoview tracks your DSE portfolio, shows what your money has really earned, and keeps every dividend date in view. Free, in plain language, built in Tanzania.
           </p>
           <div className="ld-ctas">
             <a href="/portfolio" className="ld-btn">{cta} <ArrowRight aria-hidden="true" /></a>
@@ -185,7 +185,7 @@ export default function Landing() {
           <ol>
             <li><b>Sign in with your email.</b><span>We send a one-time link. There’s no password to remember.</span></li>
             <li><b>Add your trades.</b><span>The stock, the date, the number of shares. The closing price for that day fills itself in, and splits are handled for you.</span></li>
-            <li><b>See where you stand.</b><span>Value, gain, dividends received and coming, and a fair comparison with the DSE, with a short AI-written summary of what drove it.</span></li>
+            <li><b>See where you stand.</b><span>Money in against value now, your return a year, dividends received and coming, and a short AI-written summary of what drove it.</span></li>
           </ol>
         </section>
 
