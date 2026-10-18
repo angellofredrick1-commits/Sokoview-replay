@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Briefcase, CalendarDays, History, LayoutGrid, Moon, Search, Sun, X } from 'lucide-react';
+import { Briefcase, CalendarDays, History, LayoutGrid, LogOut, Moon, Search, Sun, X } from 'lucide-react';
 import { useTheme } from '../theme/theme.js';
 import { loadInstruments } from '../lib/marketData.js';
+import { configured, getSession, onAuthChange, signOut } from '../lib/portfolioData.js';
 import { logoUrl, monogramColor, monogramText } from '../logos.js';
 import './site-nav.css';
 
@@ -149,8 +150,31 @@ export function PageIntro({ title, children, actions }) {
   );
 }
 
-export default function SiteNav({ active }) {
+/** Where to send someone who isn't signed in: sign-in first, then back to this page. */
+export const signInHref = (next = window.location.pathname + window.location.search) => `/portfolio?next=${encodeURIComponent(next)}`;
+
+/**
+ * Every page except Portfolio (which has its own sign-in form) is for signed-in users.
+ * The <head> of each page already redirects when there's no stored session; this also
+ * catches a session that has expired or been signed out in another tab.
+ */
+function useSignedIn(requireAuth) {
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    if (!configured) return undefined;
+    const apply = (session) => {
+      setSignedIn(Boolean(session));
+      if (!session && requireAuth) window.location.replace(signInHref());
+    };
+    getSession().then(apply);
+    return onAuthChange(apply);
+  }, [requireAuth]);
+  return signedIn;
+}
+
+export default function SiteNav({ active, requireAuth = true }) {
   const [searching, setSearching] = useState(false);
+  const signedIn = useSignedIn(requireAuth);
 
   useEffect(() => {
     document.documentElement.classList.add('sv-has-nav');
@@ -173,6 +197,11 @@ export default function SiteNav({ active }) {
               <Search aria-hidden="true" />
             </button>
             <ThemeToggle />
+            {signedIn && (
+              <button type="button" className="sv-theme" onClick={() => signOut()} aria-label="Sign out" title="Sign out">
+                <LogOut aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
         {searching && (

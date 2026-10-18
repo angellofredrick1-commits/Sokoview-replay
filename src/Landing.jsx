@@ -31,7 +31,7 @@ function useHeaderScrolled() {
 }
 
 // ---------- live board strip (real closes, nothing invented) ----------
-function BoardStrip({ market }) {
+function BoardStrip({ market, to }) {
   if (!market?.snapshot?.length) return <div className="ld-board ld-board--loading" aria-hidden="true" />;
   const snap = market.snapshot;
   const date = snap.reduce((d, r) => (r.trade_date > d ? r.trade_date : d), '');
@@ -46,7 +46,7 @@ function BoardStrip({ market }) {
       <ul>
         {rows.map((r) => (
           <li key={r.symbol}>
-            <a href={stockHref(r.symbol)} className="ld-tile">
+            <a href={to(stockHref(r.symbol))} className="ld-tile">
               <span className="ld-tile__top"><SvMark symbol={r.symbol} size={20} /><b>{r.symbol}</b></span>
               <span className="ld-tile__close">{nf.format(r.close)}</span>
               <span className={`ld-tile__chg ${r.pct_change > 0 ? 'is-up' : r.pct_change < 0 ? 'is-down' : ''}`}>{r.pct_change ? pct(r.pct_change) : 'unchanged'}</span>
@@ -54,7 +54,7 @@ function BoardStrip({ market }) {
           </li>
         ))}
       </ul>
-      <a className="ld-board__more" href="/market">All {snap.length} shares <ArrowRight aria-hidden="true" /></a>
+      <a className="ld-board__more" href={to('/market')}>All {snap.length} shares <ArrowRight aria-hidden="true" /></a>
     </figure>
   );
 }
@@ -135,6 +135,8 @@ export default function Landing() {
   useEffect(() => { loadMarket().then(setMarket).catch(() => setMarket(null)); }, []);
 
   const cta = signedIn ? 'Open your portfolio' : 'Sign in';
+  // Everything past this page is for signed-in users: signed out, links go via sign-in and come back.
+  const to = (path) => (signedIn || path === '/portfolio' ? path : `/portfolio?next=${encodeURIComponent(path)}`);
 
   return (
     <div className="ld">
@@ -142,9 +144,9 @@ export default function Landing() {
         <div className="ld-head__inner">
           <a href="/" className="ld-brand" aria-label="Sokoview"><SvLogo /></a>
           <nav className="ld-head__links" aria-label="Explore">
-            <a href="/market">Market</a>
-            <a href="/dividends">Dividends</a>
-            <a href="/replay">Replay</a>
+            <a href={to('/market')}>Market</a>
+            <a href={to('/dividends')}>Dividends</a>
+            <a href={to('/replay')}>Replay</a>
           </nav>
           <div className="ld-head__actions">
             <ThemeToggle />
@@ -162,20 +164,20 @@ export default function Landing() {
           </p>
           <div className="ld-ctas">
             <a href="/portfolio" className="ld-btn">{cta} <ArrowRight aria-hidden="true" /></a>
-            <a href="/market" className="ld-btn ld-btn--ghost">See today’s market</a>
+            <a href={to('/market')} className="ld-btn ld-btn--ghost">See today’s market</a>
           </div>
           {!signedIn && <p className="ld-hint">No password. We email you a sign-in link.</p>}
-          <BoardStrip market={market} />
+          <BoardStrip market={market} to={to} />
         </section>
 
         <section className="ld-features" aria-label="What Sokoview does">
           {FEATURES.map(({ key, href, Icon, title, body, Art }) => (
-            <a key={key} href={href} className={`ld-feature ld-feature--${key}`}>
+            <a key={key} href={to(href)} className={`ld-feature ld-feature--${key}`}>
               <span className="ld-feature__icon"><Icon aria-hidden="true" /></span>
               <h2>{title}</h2>
               <p>{body}</p>
               <Art market={market} />
-              <span className="ld-feature__go">Open <ArrowRight aria-hidden="true" /></span>
+              <span className="ld-feature__go">{signedIn || key === 'portfolio' ? 'Open' : 'Sign in to open'} <ArrowRight aria-hidden="true" /></span>
             </a>
           ))}
         </section>
@@ -207,7 +209,7 @@ export default function Landing() {
       <footer className="ld-foot">
         <SvLogo />
         <nav aria-label="Footer">
-          <a href="/portfolio">Portfolio</a><a href="/market">Market</a><a href="/dividends">Dividends</a><a href="/replay">Replay</a>
+          <a href="/portfolio">Portfolio</a><a href={to('/market')}>Market</a><a href={to('/dividends')}>Dividends</a><a href={to('/replay')}>Replay</a>
         </nav>
         <p>Prices from the Dar es Salaam Stock Exchange. Information only, not investment advice.</p>
       </footer>
