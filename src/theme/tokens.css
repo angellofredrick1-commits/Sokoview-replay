@@ -43,7 +43,7 @@
   --sv-chart-axis: #9ca3af;
   --sv-chart-ref: #d1d5db;
   --sv-series-b: #0a0a0a;
-  /* two-series charts (validated light + dark, CVD-safe): you vs benchmark, bought vs sold */
+  /* two-series charts (validated light + dark, CVD-safe): value vs money in, bought vs sold */
   --sv-series-1: #16a34a;
   --sv-series-2: #2a78d6;
 

@@ -9,8 +9,8 @@ import {
   SetupError, configured, deleteTrade, getSession, latestPrices, listTrades, onAuthChange,
   priceOn, saveTrade, sendSignInLink, signOut,
 } from './lib/portfolioData.js';
-import { ActivityCard, BenchmarkCard, Highlights, InsightCard, buildInsightSummary, useBenchmark } from './PortfolioAnalytics.jsx';
-import { activity, performers } from './lib/portfolio.js';
+import { ActivityCard, GrowthCard, Highlights, InsightCard, buildInsightSummary, useValueHistory } from './PortfolioAnalytics.jsx';
+import { activity, performers, returns } from './lib/portfolio.js';
 import './portfolio.css';
 
 const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
@@ -255,9 +255,9 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
   const t = s.totals;
   const perf = useMemo(() => performers(s.holdings), [s.holdings]);
   const act = useMemo(() => activity(trades), [trades]);
-  const bench = useBenchmark(trades, { splits, today, value: t.value, dividendRows: s.dividends, dividendsReceived: t.dividendsReceived });
-  const benchSettled = bench.status !== 'loading';
-  const insightSummary = useMemo(() => buildInsightSummary({ today, s, perf, act, bench, names }), [today, s, perf, act, bench, names]);
+  const ret = useMemo(() => returns(trades, { value: t.value, today, dividendRows: s.dividends }), [trades, t.value, today, s.dividends]);
+  const hist = useValueHistory(trades, { splits, today });
+  const insightSummary = useMemo(() => buildInsightSummary({ today, s, perf, act, ret, names }), [today, s, perf, act, ret, names]);
 
   const remove = async (trade) => {
     setErr(null);
@@ -294,8 +294,8 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
         <>
           <Highlights perf={perf} names={names} />
           <div className="pf-ana-grid">
-            <BenchmarkCard bench={bench} />
-            <InsightCard summary={insightSummary} ready={dataReady && benchSettled && s.holdings.some((h) => h.value != null)} />
+            <GrowthCard ret={ret} hist={hist} />
+            <InsightCard summary={insightSummary} ready={dataReady && s.holdings.some((h) => h.value != null)} />
           </div>
         </>
       )}

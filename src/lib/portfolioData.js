@@ -9,10 +9,6 @@ export class SetupError extends Error {}
 
 function check(error) {
   if (!error) return;
-  // Benchmark functions missing: migration 0011 hasn't been run yet.
-  if (/index_at|index_monthly|monthly_closes|market_index/.test(error.message || '')) {
-    throw new SetupError('The DSE benchmark isn\'t set up yet: run supabase/migrations/0011_market_benchmark.sql.');
-  }
   // Table or function missing: migration 0010 hasn't been run yet.
   if (['42P01', 'PGRST205', 'PGRST202', '42883'].includes(error.code) || /portfolio_txn|price_on/.test(error.message || '')) {
     throw new SetupError('Portfolio storage isn\'t set up yet: run supabase/migrations/0010_portfolio.sql.');
@@ -91,27 +87,20 @@ export async function latestPrices(symbols) {
   return Object.fromEntries(entries.filter(([, v]) => v));
 }
 
-// ---------- benchmark (migration 0011) ----------
-export async function indexAt(dates) {
-  const uniq = [...new Set(dates)];
-  if (!uniq.length) return {};
-  const { data, error } = await supabase.rpc('index_at', { p_dates: uniq });
-  check(error);
-  return Object.fromEntries((data || []).map((r) => [r.asked, Number(r.level)]));
-}
-
-export async function indexMonthly(from) {
-  const { data, error } = await supabase.rpc('index_monthly', { p_from: from });
-  check(error);
-  return (data || []).map((r) => ({ date: r.trade_date, level: Number(r.level) }));
-}
-
+// ---------- month-end prices (for the value chart) ----------
+/** Last split-adjusted close of each month, per symbol: { CRDB: { '2025-01': 640, ... } }. */
 export async function monthlyCloses(symbols, from) {
   if (!symbols.length) return {};
-  const { data, error } = await supabase.rpc('monthly_closes', { p_symbols: symbols, p_from: from });
-  check(error);
+  const PAGE = 1000;
   const out = {};
-  for (const r of data || []) (out[r.symbol] ||= {})[r.trade_date.slice(0, 7)] = Number(r.close);
+  for (let offset = 0; offset < 50000; offset += PAGE) {
+    const { data, error } = await supabase.from('price_adjusted').select('symbol,trade_date,close_adj')
+      .in('symbol', symbols).gte('trade_date', from)
+      .order('trade_date', { ascending: true }).range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    for (const r of data) (out[r.symbol] ||= {})[String(r.trade_date).slice(0, 7)] = Number(r.close_adj);
+    if (data.length < PAGE) break;
+  }
   return out;
 }
 

@@ -255,64 +255,48 @@ export function xirr(flows) {
   return ((lo + hi) / 2) * 100;
 }
 
+const cashFlow = (t) => (t.side === 'buy'
+  ? -(Number(t.shares) * Number(t.price) + Number(t.fees || 0))
+  : Number(t.shares) * Number(t.price) - Number(t.fees || 0));
+
 /**
- * Your portfolio against the same money put into the DSE benchmark on the same days.
- * Every buy also "buys" the index with the same shillings; every sale takes the
- * same shillings back out. Price only on both sides, so it's like for like; the
- * dividend-inclusive figure is reported separately.
- *
- * indexAt: { [tradeDate]: level } for each trade date; indexNow: { date, level }.
+ * Return over the whole period: what went in, what came out, what it's worth now.
+ * gain = value now + taken out on sales - put in. Annual rates are money-weighted (XIRR),
+ * so a buy last month doesn't count as if it had been there for years.
  */
-export function vsBenchmark(txns, { splits = [], value, today, indexAt, indexNow, dividendsReceived = 0, dividendRows = [] }) {
-  if (!txns.length || !indexNow) return null;
-  let units = 0; let missing = false;
-  const flowsYou = []; const flowsIdx = [];
-  for (const t of sortTxns(txns)) {
-    const level = indexAt[t.trade_date];
-    const cash = t.side === 'buy'
-      ? -(Number(t.shares) * Number(t.price) + Number(t.fees || 0))
-      : Number(t.shares) * Number(t.price) - Number(t.fees || 0);
-    flowsYou.push({ date: t.trade_date, amount: cash });
-    flowsIdx.push({ date: t.trade_date, amount: cash });
-    if (!level) { missing = true; continue; }
-    units += -cash / level; // buy adds units, sale removes them
-  }
-  if (missing) return null;
-  const benchValue = units * indexNow.level;
-  const invested = flowsYou.filter((f) => f.amount < 0).reduce((s, f) => s - f.amount, 0);
-  const takenOut = flowsYou.filter((f) => f.amount > 0).reduce((s, f) => s + f.amount, 0);
-  const youPriceOnly = xirr([...flowsYou, { date: today, amount: value }]);
-  const youWithDivs = xirr([
-    ...flowsYou,
-    ...dividendRows.filter((r) => r.status === 'received' && r.currency === 'TZS').map((r) => ({ date: r.payDate, amount: r.net })),
-    { date: today, amount: value },
-  ].sort((a, b) => (a.date < b.date ? -1 : 1)));
-  const bench = xirr([...flowsIdx, { date: today, amount: benchValue }]);
-  const gainYou = value + takenOut - invested;
-  const gainIdx = benchValue + takenOut - invested;
+export function returns(txns, { value, today, dividendRows = [] }) {
+  if (!txns.length) return null;
+  const sorted = sortTxns(txns);
+  const flows = sorted.map((t) => ({ date: t.trade_date, amount: cashFlow(t) }));
+  const invested = flows.filter((f) => f.amount < 0).reduce((s, f) => s - f.amount, 0);
+  const takenOut = flows.filter((f) => f.amount > 0).reduce((s, f) => s + f.amount, 0);
+  const divs = dividendRows.filter((r) => r.status === 'received' && r.currency === 'TZS');
+  const dividendsReceived = divs.reduce((s, r) => s + r.net, 0);
+  const gain = value + takenOut - invested;
+  const first = sorted[0].trade_date;
   return {
-    value, benchValue, invested, takenOut,
-    gainYou, gainIdx, edge: gainYou - gainIdx,
-    gainYouPct: invested ? (gainYou / invested) * 100 : null,
-    gainIdxPct: invested ? (gainIdx / invested) * 100 : null,
-    annualYou: youPriceOnly, annualYouWithDividends: youWithDivs, annualIdx: bench,
+    first, days: Math.round((Date.parse(today) - Date.parse(first)) / 86400000),
+    invested, takenOut, netIn: invested - takenOut, value,
+    gain, gainPct: invested ? (gain / invested) * 100 : null,
+    gainWithDividends: gain + dividendsReceived,
+    gainWithDividendsPct: invested ? ((gain + dividendsReceived) / invested) * 100 : null,
     dividendsReceived,
-    indexDate: indexNow.date,
+    annual: xirr([...flows, { date: today, amount: value }]),
+    annualWithDividends: xirr([...flows, ...divs.map((r) => ({ date: r.payDate, amount: r.net })), { date: today, amount: value }]
+      .sort((a, b) => (a.date < b.date ? -1 : 1))),
   };
 }
 
 /**
- * Month-end portfolio value next to the benchmark bought with the same cash.
- * closes: { [symbol]: { [YYYY-MM]: adjustedClose } }; indexMonthly: { [YYYY-MM]: level };
- * indexAt: { [tradeDate]: level }.
+ * Month-end value of what you held, next to the money you had in at that point
+ * (buys minus sale proceeds). closes: { [symbol]: { [YYYY-MM]: split-adjusted close } }.
  */
-export function valueHistory(txns, { splits = [], closes = {}, indexMonthly = {}, indexAt = {}, today }) {
+export function valueHistory(txns, { splits = [], closes = {}, today }) {
   if (!txns.length) return [];
   const sorted = sortTxns(txns);
-  const months = monthsBetween(sorted[0].trade_date, today);
   const lastClose = {};
   const out = [];
-  for (const mk of months) {
+  for (const mk of monthsBetween(sorted[0].trade_date, today)) {
     const end = mk === monthKey(today) ? today : `${mk}-31`;
     const pos = positions(txns, splits, { asOf: end });
     let value = 0; let complete = true;
@@ -323,16 +307,8 @@ export function valueHistory(txns, { splits = [], closes = {}, indexMonthly = {}
       lastClose[p.symbol] = c;
       value += p.shares * c;
     }
-    let units = 0; let invested = 0;
-    for (const t of sorted) {
-      if (t.trade_date > end) break;
-      const cash = t.side === 'buy' ? Number(t.shares) * Number(t.price) + Number(t.fees || 0) : -(Number(t.shares) * Number(t.price) - Number(t.fees || 0));
-      invested += cash;
-      const lvl = indexAt[t.trade_date];
-      if (lvl) units += cash / lvl;
-    }
-    const lvlEnd = indexMonthly[mk];
-    out.push({ month: mk, portfolio: complete ? Math.round(value) : null, benchmark: lvlEnd ? Math.round(units * lvlEnd) : null, invested: Math.round(invested) });
+    const invested = -sorted.filter((t) => t.trade_date <= end).reduce((x, t) => x + cashFlow(t), 0);
+    out.push({ month: mk, value: complete ? Math.round(value) : null, invested: Math.round(invested) });
   }
   return out;
 }
