@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "start": "netlify dev",
     "test:dividends": "node scripts/test-dividends.mjs",
+    "test:portfolio": "node scripts/test-portfolio.mjs",
     "dividends:seed-sql": "node scripts/dividends-seed-to-sql.mjs"
   },
   "dependencies": {
     "@netlify/functions": "^6.0.0",
+    "@supabase/supabase-js": "^2.118.0",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

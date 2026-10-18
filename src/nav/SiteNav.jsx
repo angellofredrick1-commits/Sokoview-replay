@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { CalendarDays, History, Home as HomeIcon, LineChart, Moon, Search, Sun, X } from 'lucide-react';
+import { Briefcase, CalendarDays, History, Home as HomeIcon, LineChart, Moon, Search, Sun, X } from 'lucide-react';
 import { useTheme } from '../theme/theme.js';
 import { loadInstruments } from '../lib/marketData.js';
 import { logoUrl, monogramColor, monogramText } from '../logos.js';
@@ -11,6 +11,7 @@ export const NAV_ITEMS = [
   { key: 'replay', label: 'Replay', href: '/replay', Icon: History },
   { key: 'dividends', label: 'Dividends', href: '/dividends', Icon: CalendarDays },
   { key: 'stocks', label: 'Stocks', href: '/stock', Icon: LineChart },
+  { key: 'portfolio', label: 'Portfolio', href: '/portfolio', Icon: Briefcase },
 ];
 
 export const stockHref = (symbol) => `/stock?symbol=${encodeURIComponent(symbol)}`;
