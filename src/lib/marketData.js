@@ -49,7 +49,9 @@ const FALLBACK_INSTRUMENTS = [
   ['UMOJA', 'Umoja Fund', 'fund'], ['WATOTO', 'Watoto Fund', 'fund'], ['WEKEZA', 'Wekeza Maisha Fund', 'fund'],
 ].map(([symbol, name, kind]) => ({ symbol, name, kind }));
 
-const CACHE_KEY = 'sv.instruments.v1';
+// v2: entries expire after an hour, so a newly listed instrument shows up without closing the tab.
+const CACHE_KEY = 'sv.instruments.v2';
+const CACHE_TTL = 3600 * 1000;
 let instrumentsPromise = null;
 
 export function loadInstruments() {
@@ -57,13 +59,13 @@ export function loadInstruments() {
   instrumentsPromise = (async () => {
     try {
       const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY));
-      if (Array.isArray(cached) && cached.length) return cached;
+      if (cached && Array.isArray(cached.list) && cached.list.length && Date.now() - cached.at < CACHE_TTL) return cached.list;
     } catch { /* no storage */ }
     if (!isLive) return FALLBACK_INSTRUMENTS;
     try {
       const rows = await sbGet('instrument?select=symbol,name,kind&is_active=eq.true&order=symbol.asc');
       const list = rows.map((r) => ({ symbol: r.symbol, name: r.name || r.symbol, kind: r.kind || 'equity' }));
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch { /* full or blocked */ }
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), list })); } catch { /* full or blocked */ }
       return list;
     } catch {
       return FALLBACK_INSTRUMENTS;
@@ -94,6 +96,31 @@ const SAMPLE_GROWTH = [
 ];
 
 const num = (v) => (v == null ? null : Number(v));
+
+/**
+ * Every listed ETF with its last close and the move from the close before.
+ * market_snapshot() covers company shares only, so ETFs are read here from
+ * price_adjusted. An ETF with no trade yet comes back with close: null.
+ */
+export async function loadEtfs() {
+  const all = await loadInstruments();
+  const etfs = all.filter((i) => i.kind === 'etf');
+  if (!isLive) return etfs.map((e) => ({ ...e, close: null, pct_change: null, trade_date: null }));
+  return Promise.all(etfs.map(async (e) => {
+    try {
+      const rows = await sbGet(`price_adjusted?select=trade_date,close_adj&symbol=eq.${encodeURIComponent(e.symbol)}&close_adj=not.is.null&order=trade_date.desc&limit=2`);
+      const [last, prev] = rows;
+      const close = last ? Number(last.close_adj) : null;
+      const before = prev ? Number(prev.close_adj) : null;
+      return {
+        ...e, close, trade_date: last?.trade_date ?? null,
+        pct_change: close != null && before ? ((close - before) / before) * 100 : null,
+      };
+    } catch {
+      return { ...e, close: null, pct_change: null, trade_date: null };
+    }
+  }));
+}
 
 export async function loadMarket() {
   if (!isLive) return { mode: 'sample', snapshot: SAMPLE_SNAPSHOT, growth: SAMPLE_GROWTH };

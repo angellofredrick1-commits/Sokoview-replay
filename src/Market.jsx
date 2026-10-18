@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import SiteNav, { PageIntro, SvMark, dividendsHref, replayHref, stockHref } from './nav/SiteNav.jsx';
-import { loadMarket } from './lib/marketData.js';
+import { loadEtfs, loadMarket } from './lib/marketData.js';
 import { loadCalendarData } from './lib/dividendData.js';
 import {
   EVENT_TYPES, adjustedAmount, calendarDividends, daysBetween, formatAmount, fromISO, toEvents, todayISO,
@@ -73,6 +73,38 @@ function MarketBoard({ snapshot }) {
         ))}
       </ul>
       <p className="hm-note">Closing prices in TZS. Tap a stock for its price history, dividends and a Replay.</p>
+    </section>
+  );
+}
+
+// ---------- ETFs ----------
+function EtfBoard({ etfs }) {
+  if (!etfs?.length) return null;
+  const rows = [...etfs].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  return (
+    <section className="hm-board hm-board--etf" aria-labelledby="hm-etf-h">
+      <div className="hm-section-head"><h2 id="hm-etf-h">ETFs</h2></div>
+      <ul className="hm-board__grid">
+        {rows.map((r) => {
+          const p = r.pct_change;
+          const label = r.close == null ? 'no trades yet' : p ? pct(p) : 'unchanged';
+          return (
+            <li key={r.symbol}>
+              <a className={`hm-tile${p > 0 ? ' is-up' : p < 0 ? ' is-down' : ''}${r.close == null ? ' is-empty' : ''}`} href={stockHref(r.symbol)}
+                style={tint(p)} title={r.name}
+                aria-label={`${r.symbol}, ${r.name}, ${r.close == null ? 'no trades yet' : `TZS ${nf.format(r.close)}, ${label}`}`}>
+                <span className="hm-tile__top">
+                  <SvMark symbol={r.symbol} size={22} />
+                  <b>{r.symbol.replace(/-ETF$/, '')}</b>
+                </span>
+                <span className="hm-tile__close">{r.close == null ? '—' : nf.format(r.close)}</span>
+                <span className="hm-tile__chg">{label}</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="hm-note">Exchange-traded funds listed on the DSE, at their last closing price in TZS. Tap one for its price history.</p>
     </section>
   );
 }
@@ -160,9 +192,11 @@ export default function Market() {
   const [market, setMarket] = useState(null);
   const [cal, setCal] = useState(null);
   const [error, setError] = useState(null);
+  const [etfs, setEtfs] = useState(null);
 
   useEffect(() => {
     loadMarket().then(setMarket).catch((e) => setError(e.message || String(e)));
+    loadEtfs().then(setEtfs).catch(() => setEtfs([]));
     loadCalendarData().then(setCal).catch(() => setCal({ dividends: [], splits: [] }));
   }, []);
 
@@ -175,6 +209,7 @@ export default function Market() {
         {!market && !error && <div className="hm-skeleton" aria-hidden="true" />}
         {market && market.snapshot.length > 0 && <MarketIntro snapshot={market.snapshot} />}
         {market && market.snapshot.length > 0 && <MarketBoard snapshot={market.snapshot} />}
+        <EtfBoard etfs={etfs} />
         <div className="hm-columns">
           <DividendsPanel cal={cal} today={today} />
           {market && <ReplayPanel growth={market.growth} />}
