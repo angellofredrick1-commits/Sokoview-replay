@@ -34,6 +34,8 @@ SYMBOLS = {
     "MKCB": "MKCB",       "JATU": "JATU",      "MBP": "MBP",
     "EABL": "EABL",       "YETU": "YETU",      "USL": "USL",
     "VERTEX-ETF": "VERTEX-ETF", "IEACLC-ETF": "IEACLC-ETF",
+    # Zan Timiza ETF: ticker not confirmed yet, so accept the likely spellings.
+    "ZAN-ETF": "ZAN-ETF", "ZANETF": "ZAN-ETF", "TIMIZA-ETF": "ZAN-ETF", "ZAN TIMIZA": "ZAN-ETF",
     "MAENDELEO": "MBP",   "MWALIMU": "MCB",    "MKOMBOZI": "MKCB",
     "SWISSPORT": "SWIS",  "UCHUMI": "USL",     "JUBILEE": "JHL",
 }

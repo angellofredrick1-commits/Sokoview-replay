@@ -13,6 +13,8 @@ const SYMBOLS = {
   SWISS: "SWIS", TOL: "TOL", MKCB: "MKCB", JATU: "JATU", MBP: "MBP",
   EABL: "EABL", YETU: "YETU", USL: "USL",
   "VERTEX-ETF": "VERTEX-ETF", "IEACLC-ETF": "IEACLC-ETF",
+  // Zan Timiza ETF: ticker not confirmed yet, so accept the likely spellings.
+  "ZAN-ETF": "ZAN-ETF", "ZANETF": "ZAN-ETF", "TIMIZA-ETF": "ZAN-ETF", "ZAN TIMIZA": "ZAN-ETF", "TIMIZA": "ZAN-ETF",
   MAENDELEO: "MBP", MWALIMU: "MCB", MKOMBOZI: "MKCB", SWISSPORT: "SWIS",
   UCHUMI: "USL", JUBILEE: "JHL", "TANGA CEMENT": "TCCL",
 };
@@ -215,6 +217,7 @@ const COMPANY_NAMES = {
   "AFRIPRISE": "AFRIPRISE", "JATU": "JATU", "SWALA": "SWALA",
   "UCHUMI COMMERCIAL BANK": "USL", "YETU MICROFINANCE": "YETU",
   "ITRUST EAC LARGE CAP": "IEACLC-ETF", "VERTEX INTERNATIONAL SECURITIES": "VERTEX-ETF",
+  "ZAN TIMIZA": "ZAN-ETF", "TIMIZA": "ZAN-ETF",
 };
 
 function looksLikeAlpha(text) {
@@ -260,8 +263,8 @@ function resolveAlpha(name, ticker) {
     if (N.includes(k)) { byName = COMPANY_NAMES[k]; break; }
   }
   const T = (ticker || "").toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
-  const byTicker = SYMBOLS[T] || (/(IEACLC|VIS)-?ETF/.test(T)
-    ? (T.startsWith("IEACLC") ? "IEACLC-ETF" : "VERTEX-ETF") : null);
+  const byTicker = SYMBOLS[T] || (/(ZAN|TIMIZA)/.test(T) && /ETF/.test(T) ? "ZAN-ETF"
+    : /(IEACLC|VIS)-?ETF/.test(T) ? (T.startsWith("IEACLC") ? "IEACLC-ETF" : "VERTEX-ETF") : null);
   return {
     symbol: byName || byTicker,
     conflict: byName && byTicker && byName !== byTicker ? { name, ticker, byName, byTicker } : null,
