@@ -60,8 +60,8 @@ body.dc-noscroll { overflow: hidden; }
 .dc-pill.is-live { background: var(--dc-green-bg); color: var(--dc-green-ink); }
 .dc-pill.is-live::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--dc-green); vertical-align: 1px; }
 
-.dc-main { max-width: 1120px; margin: 0 auto; padding: 28px 16px 48px; }
-@media (min-width: 720px) { .dc-main { padding: 40px 24px 64px; } }
+.dc-main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 48px; }
+@media (min-width: 720px) { .dc-main { padding: 24px 24px 64px; } }
 
 .dc-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--dc-green-ink); letter-spacing: 0; }
 
@@ -327,7 +327,7 @@ body.dc-noscroll { overflow: hidden; }
 /* ---------- single-stock summary ---------- */
 .dc-stock {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 28px; align-items: center;
-  margin: -8px 0 28px; padding: 18px 20px; border: 1px solid var(--dc-line); border-radius: var(--dc-radius);
+  margin: 0 0 24px; padding: 18px 20px; border: 1px solid var(--dc-line); border-radius: var(--dc-radius);
   background: var(--dc-surface);
 }
 .dc-stock__id { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -397,6 +397,6 @@ body.dc-noscroll { overflow: hidden; }
 /* title row now that the shared nav owns the top bar */
 .dc-titlebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dc-titlebar .dc-title { margin: 0; }
-.dc-titlebar__sub { margin-left: auto; background: var(--dc-green); border-color: var(--dc-green); color: var(--sv-on-accent) !important; }
+.dc-titlebar__sub { background: var(--dc-green); border-color: var(--dc-green); color: var(--sv-on-accent) !important; }
 .dc-titlebar__sub:hover:not(:disabled) { background: #16a34a; color: #fff !important; }
 a.dc-btn { cursor: pointer; }

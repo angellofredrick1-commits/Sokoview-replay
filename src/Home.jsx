@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import SiteNav, { SvMark, dividendsHref, replayHref, stockHref } from './nav/SiteNav.jsx';
+import SiteNav, { PageIntro, SvMark, dividendsHref, replayHref, stockHref } from './nav/SiteNav.jsx';
 import { loadMarket } from './lib/marketData.js';
 import { loadCalendarData } from './lib/dividendData.js';
 import {
@@ -7,11 +7,6 @@ import {
 } from './lib/dividends.js';
 import './home.css';
 
-const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
-const countWord = (n, cap = true) => {
-  const w = n <= 10 ? WORDS[n] : String(n);
-  return cap ? w : w.toLowerCase();
-};
 const fmt = (s, opts) => fromISO(s).toLocaleDateString('en-GB', { timeZone: 'UTC', ...opts });
 const nf = new Intl.NumberFormat('en-US');
 const pct = (n, d = 1) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(d)}%`;
@@ -22,34 +17,17 @@ function urlToday() {
 }
 
 // ---------- hero ----------
-function MarketHeadline({ snapshot }) {
+function MarketIntro({ snapshot }) {
   const date = snapshot.reduce((d, r) => (r.trade_date > d ? r.trade_date : d), '');
-  const up = snapshot.filter((r) => r.pct_change > 0);
-  const down = snapshot.filter((r) => r.pct_change < 0);
-  const day = date ? fmt(date, { weekday: 'long' }) : '';
-  const biggest = [...up, ...down].sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change))[0];
-
-  // Spell out small counts, but never mix "Nine" with "11" in one sentence.
-  const words = up.length <= 10 && down.length <= 10;
-  const say = (n, cap = true) => (words ? countWord(n, cap) : String(n));
-  let lead;
-  if (!up.length && !down.length) lead = <>No DSE stock changed price on {day}.</>;
-  else if (!down.length) lead = <>{say(up.length)} stock{up.length === 1 ? '' : 's'} rose on the DSE on {day}, and none fell.</>;
-  else if (!up.length) lead = <>{say(down.length)} stock{down.length === 1 ? '' : 's'} fell on the DSE on {day}, and none rose.</>;
-  else lead = <>{say(up.length)} stock{up.length === 1 ? '' : 's'} rose and {say(down.length, false)} fell on the DSE on {day}.</>;
-
+  const up = snapshot.filter((r) => r.pct_change > 0).length;
+  const down = snapshot.filter((r) => r.pct_change < 0).length;
+  const flat = snapshot.length - up - down;
+  const biggest = snapshot.filter((r) => r.pct_change).sort((a, b) => Math.abs(b.pct_change) - Math.abs(a.pct_change))[0];
   return (
-    <section className="hm-hero">
-      <p className="hm-kicker">Market close, {date ? fmt(date, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</p>
-      <h1 className="hm-hero__lead">{lead}</h1>
-      {biggest && (
-        <p className="hm-hero__sub">
-          <a href={stockHref(biggest.symbol)}>{biggest.symbol}</a> made the biggest move,{' '}
-          {biggest.pct_change > 0 ? 'up' : 'down'} {Math.abs(biggest.pct_change).toFixed(1)}% to TZS {nf.format(biggest.close)}.
-          {' '}{snapshot.length - up.length - down.length} of {snapshot.length} closed unchanged.
-        </p>
-      )}
-    </section>
+    <PageIntro title={`Market close, ${date ? fmt(date, { weekday: 'short', day: 'numeric', month: 'short' }) : '—'}`}>
+      <b>{up}</b> up, <b>{down}</b> down, <b>{flat}</b> unchanged.
+      {biggest && <> Biggest move <a href={stockHref(biggest.symbol)}><b>{biggest.symbol}</b></a> {pct(biggest.pct_change)}.</>}
+    </PageIntro>
   );
 }
 
@@ -195,12 +173,12 @@ export default function Home() {
         {error && <p className="hm-banner">Couldn't load today's prices: {error}. Refresh to try again.</p>}
         {market?.mode === 'sample' && <p className="hm-banner hm-banner--quiet">Sample data. Set the Supabase variables to show live prices.</p>}
         {!market && !error && <div className="hm-skeleton" aria-hidden="true" />}
-        {market && market.snapshot.length > 0 && <MarketHeadline snapshot={market.snapshot} />}
+        {market && market.snapshot.length > 0 && <MarketIntro snapshot={market.snapshot} />}
+        {market && market.snapshot.length > 0 && <MarketBoard snapshot={market.snapshot} />}
         <div className="hm-columns">
           <DividendsPanel cal={cal} today={today} />
           {market && <ReplayPanel growth={market.growth} />}
         </div>
-        {market && market.snapshot.length > 0 && <MarketBoard snapshot={market.snapshot} />}
         <footer className="hm-foot">
           Prices from the Dar es Salaam Stock Exchange via Sokoview. Not investment advice.
         </footer>

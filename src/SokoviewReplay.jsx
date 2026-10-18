@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import SiteNav from "./nav/SiteNav.jsx";
+import SiteNav, { PageIntro } from "./nav/SiteNav.jsx";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
@@ -1191,130 +1191,26 @@ export default function SokoviewReplay() {
 
       {/* ---------- header ---------- */}
       <SiteNav active="replay" />
-      <header className="border-b border-line bg-page">
-       <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[15px] font-bold text-accent-ink leading-tight">Replay</h1>
-          <p className="text-[13.5px] text-muted">What a DSE investment would be worth today, played back week by week.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1 p-1 bg-surface-2 rounded-lg">
-            <button
-              onClick={() => setSource("demo")}
-              className={`flex items-center gap-1.5 text-[12.5px] font-bold py-1.5 px-3 rounded-md ${
-                source === "demo" ? "bg-inverse text-on-inverse" : "text-muted"
-              }`}
-            >
-              <FlaskConical className="w-3 h-3" /> Sample data
-            </button>
-            <button
-              onClick={() => setSource("live")}
-              className={`flex items-center gap-1.5 text-[12.5px] font-bold py-1.5 px-3 rounded-md ${
-                source === "live" ? "bg-accent text-on-accent" : "text-muted"
-              }`}
-            >
-              <Plug className="w-3 h-3" /> Sokoview API
-            </button>
-          </div>
-        </div>
-       </div>
-      </header>
-
-      {/* ---------- live panel ---------- */}
-      {source === "live" && (
-        <div className="border-b border-line bg-surface px-5 py-4">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex items-end justify-between gap-3 flex-wrap">
-              <div>
-                <Eyebrow>Data source</Eyebrow>
-                <div className="text-[13px] font-bold text-ink">
-                  Sokoview price history · split &amp; bonus adjusted
-                </div>
-                <div className="text-[13px] text-muted mt-0.5">
-                  {universe.length
-                    ? `${universe.length} instruments · ${universe[0]?.first ?? ""} to ${universe[0]?.last ?? ""}`
-                    : "Loading universe…"}
-                </div>
-              </div>
-              <div className="flex items-end gap-2">
-                <div>
-                  <Eyebrow>Resolution</Eyebrow>
-                  <Seg
-                    value={resolution}
-                    onChange={setResolution}
-                    options={[
-                      { v: "monthly", l: "Monthly" },
-                      { v: "weekly", l: "Weekly" },
-                      { v: "daily", l: "Daily" },
-                    ]}
-                  />
-                </div>
-                <button
-                  onClick={() => setPasteOpen((v) => !v)}
-                  className="border border-line-strong bg-page text-[13.5px] font-bold px-3 py-2.5 rounded-lg hover:border-ink"
-                >
-                  Paste JSON
-                </button>
-              </div>
-            </div>
-
-            {conn.state === "loading" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[13.5px] font-bold text-muted">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading price history…
-              </div>
-            )}
-            {conn.state === "ok" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[13.5px] font-bold text-accent-ink">
-                <Check className="w-3.5 h-3.5" /> {conn.msg}
-              </div>
-            )}
-            {conn.state === "err" && (
-              <div className="mt-2.5 flex items-start gap-1.5 text-[13.5px] font-semibold text-down-ink">
-                <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
-                <span>
-                  {conn.msg}
-                  <span className="block text-muted font-normal mt-0.5">
-                    Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy.
-                  </span>
-                </span>
-              </div>
-            )}
-
-            {pasteOpen && (
-              <div className="mt-3 border-t border-line pt-3">
-                <div className="flex gap-2 mb-2">
-                  <input
-                    value={pasteSym}
-                    onChange={(e) => setPasteSym(e.target.value.toUpperCase())}
-                    className="w-28 bg-page border border-line-strong rounded-lg px-3 py-2 text-[13px] font-bold outline-none"
-                    placeholder="SYMBOL"
-                  />
-                  <button
-                    onClick={ingestPaste}
-                    className="bg-accent text-on-accent text-[13.5px] font-bold px-4 py-2 rounded-lg hover:bg-accent-strong"
-                  >
-                    Load into replay
-                  </button>
-                </div>
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  rows={4}
-                  placeholder='Paste the raw response, e.g. {"data":[{"date":"2024-01-02","close":540}, …]}'
-                  className="w-full bg-page border border-line-strong rounded-lg px-3 py-2 text-[13.5px] outline-none focus:border-accent"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <main className="max-w-6xl mx-auto px-5 py-6">
-        {/* ---------- hero: the race ---------- */}
-        <section className="relative overflow-hidden mb-5 pt-2">
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[620px] h-[320px]
-                          rounded-full pointer-events-none"
-            style={{ background: "radial-gradient(circle, rgba(34,197,94,.11) 0%, transparent 70%)" }} />
+        {/* ---------- intro: one small line, then straight into the numbers ---------- */}
+        <PageIntro
+          title="Replay"
+          actions={
+            conn.state === "loading" ? (
+              <span className="flex items-center gap-1.5 text-[13px] text-muted"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading prices</span>
+            ) : conn.state === "err" ? (
+              <span className="flex items-center gap-1.5 text-[13px] text-down-ink" title={conn.msg}><AlertTriangle className="w-3.5 h-3.5" /> Prices didn't load. Refresh to try again.</span>
+            ) : null
+          }>
+          {!noData && !currencyClash && headline.length
+            ? headline.map((part, i) =>
+                part.kind === "amount" ? <b key={i} style={{ color: part.color }}>{part.text}</b>
+                  : part.kind === "name" ? <b key={i}>{part.text}</b>
+                  : <span key={i}>{part.text}</span>)
+            : "What a DSE investment would be worth today, played back week by week."}
+        </PageIntro>
+
+        <section className="relative mb-5">
           <div className="relative">
             {currencyClash ? (
               <div className="py-10 text-center max-w-xl mx-auto">
@@ -1335,31 +1231,14 @@ export default function SokoviewReplay() {
               <div className="py-10 text-center">
                 <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
                 <div className="text-[13px] text-muted">
-                  Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
+                  Price history for this stock isn't available yet. Pick another stock below.
                 </div>
               </div>
             ) : (
               <>
-                {/* ---- headline: same sentence-led hero as Home and Dividends ---- */}
-                <div className="max-w-3xl mb-7">
-                  <h1 className="text-[30px] sm:text-[44px] font-bold tracking-[-0.035em] leading-[1.06] text-ink [text-wrap:balance]">
-                    {headline.map((part, i) =>
-                      part.kind === "amount" ? (
-                        <span key={i} style={{ color: part.color }}>{part.text}</span>
-                      ) : part.kind === "name" ? (
-                        <b key={i} className="font-extrabold" style={{ boxShadow: "inset 0 -0.16em 0 var(--sv-accent)" }}>
-                          {part.text}
-                        </b>
-                      ) : part.kind === "muted" ? (
-                        <span key={i} className="text-faint">{part.text}</span>
-                      ) : (
-                        <span key={i}>{part.text}</span>
-                      )
-                    )}
-                  </h1>
-
+                <div className="mb-4">
                   {/* logo chips */}
-                  <div className="flex items-center gap-7 mt-5 flex-wrap">
+                  <div className="flex items-center gap-7 flex-wrap">
                     {legs.map((L) => (
                       <div key={L.key} className="flex items-center gap-2.5">
                         <span className="rounded-full p-[3px]" style={{ boxShadow: `0 0 0 2.5px ${L.color}` }}>
@@ -1637,84 +1516,6 @@ export default function SokoviewReplay() {
 
             {/* ---------- right: chart + results ---------- */}
             <section className="space-y-4">
-              <div className="border border-line rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <Seg
-                    value={chartMode}
-                    onChange={setChartMode}
-                    options={[
-                      { v: "value", l: "Portfolio value" },
-                      { v: "roi", l: "Return %" },
-                      { v: "price", l: "Share price" },
-                    ]}
-                  />
-                  <div className="flex items-center gap-3 text-[13px] font-bold">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-[2px]" style={{ background: A_COLOR }} /> Plan A
-                    </span>
-                    {bOn && (
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-[2px]" style={{ background: B_COLOR }} /> Plan B
-                      </span>
-                    )}
-                    {chartMode === "value" && (
-                      <span className="flex items-center gap-1.5 text-faint">
-                        <span className="w-3 border-t-2 border-dashed border-line-strong" /> Money in
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ width: "100%", height: 300 }}>
-                  <ResponsiveContainer>
-                    <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
-                      <CartesianGrid stroke="var(--sv-chart-grid)" vertical={false} />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
-                        tickFormatter={(d) => d.slice(0, 7)}
-                        minTickGap={50}
-                        axisLine={{ stroke: "var(--sv-line)" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
-                        tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
-                        axisLine={false}
-                        tickLine={false}
-                        width={52}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: 12, border: "1px solid var(--sv-line)", background: "var(--sv-page)", color: "var(--sv-ink)",
-                          fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
-                        }}
-                        labelFormatter={prettyDate}
-                        formatter={(v, name) => [
-                          chartMode === "roi" ? v.toFixed(1) + "%" : tzs(v),
-                          { aVal: "Plan A", bVal: "Plan B", aInv: "A money in", bInv: "B money in" }[name] ?? name,
-                        ]}
-                      />
-                      {chartMode === "roi" && <ReferenceLine y={0} stroke="var(--sv-chart-ref)" />}
-                      {chartMode === "value" && (
-                        <Line type="stepAfter" dataKey="aInv" stroke="#86efac" strokeWidth={1.5}
-                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                      )}
-                      {chartMode === "value" && bOn && (
-                        <Line type="stepAfter" dataKey="bInv" stroke="var(--sv-chart-axis)" strokeWidth={1.5}
-                              strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                      )}
-                      <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.4}
-                            dot={leadA} activeDot={false} isAnimationActive={false} />
-                      {bOn && (
-                        <Line type="monotone" dataKey="bVal" stroke={B_COLOR} strokeWidth={2.4}
-                              dot={leadB} activeDot={false} isAnimationActive={false} />
-                      )}
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
               {/* ---- full scorecard ---- */}
               <section className="rounded-2xl bg-surface border border-line text-ink px-5 sm:px-7 py-7">
                 <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
