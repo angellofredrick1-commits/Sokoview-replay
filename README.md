@@ -4,15 +4,16 @@
 
 | Address | Page | Audience |
 |---|---|---|
-| `/` | Home dashboard: market close, market board, upcoming dividends, biggest climbers since Jan 2025 | Investors |
-| `/replay` | Replay (was at `/`). Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
+| `/` | About Sokoview, with a live board strip and a Sign in link to `/portfolio` (reads "Open your portfolio" when a session exists) | Everyone |
+| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends, highlights, buying activity, comparison with the DSE, AI insight. Needs migrations 0010 + 0011 and Supabase Auth (see below) | Investors |
+| `/market` | Market close and the grid of every listed share (each tile opens `/stock`), upcoming dividends, climbers since Jan 2025 (was the home page) | Investors |
 | `/dividends` | Dividend calendar. Deep link: `/dividends?symbol=CRDB` | Investors |
-| `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB` | Investors |
-| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends received and due. Needs migration 0010 and Supabase Auth (see below) | Investors |
+| `/replay` | Replay. Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
+| `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB`. No tab of its own: reached from the Market grid and search | Investors |
 | `/capture`, `/report` | Capture monitor and DSE report parser | Admin only, not in the navigation |
 
-Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
-The home page reads `market_snapshot()` and `growth_since_jan_2025()` from Supabase, plus the `dividend_calendar` view.
+The tabs, in order: Portfolio, Market, Dividends, Replay. Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
+The Market page reads `market_snapshot()` and `growth_since_jan_2025()` from Supabase, plus the `dividend_calendar` view.
 
 ## Design language
 
@@ -143,11 +144,21 @@ Everything else is worked out in the browser by `src/lib/portfolio.js` (tests: `
 - average-cost holdings, gain on holdings, realised gain on sales, fees included;
 - splits: trades before a split are restated in today's shares (100 NMB pre-split = 1,000 now);
 - dividends: entitled if held at the close before the ex-date; paid, due, and expected amounts after 5% tax;
-- a sell can't exceed the shares held on its date, and a buy that a later sell depends on can't be deleted.
+- a sell can't exceed the shares held on its date, and a buy that a later sell depends on can't be deleted;
+- highlights (top performer, weakest, biggest contributor, largest holding) and buying activity by month;
+- **against the DSE**: the same shillings go into a DSE benchmark on the same trade dates (and come out on sale dates),
+  so the comparison is money-weighted, with annual rates (XIRR). The benchmark (migration 0011) is a chain-linked,
+  market-value-weighted index of the Tanzanian-listed companies, like the TSI, price only, base 1000 on 29 Aug 2016;
+  `index_member` holds the share counts, update them when a company issues shares;
+- **AI insight**: `netlify/functions/portfolio-insight.mjs` sends a numeric summary (symbols, amounts, returns; never the
+  email) to Claude Haiku and gets back 2–3 plain-language observations. Cached in the browser for a day.
 
 Trades are private: row-level security means a user can only read and change their own rows.
 
 **To switch it on**
-1. Run `supabase/migrations/0010_portfolio.sql` in the SQL editor.
+1. Run `supabase/migrations/0010_portfolio.sql`, then `0011_market_benchmark.sql`, in the SQL editor.
+   Without 0011 the page still works and shows a note where the DSE comparison would be.
+1. Netlify → Site configuration → Environment variables: set `ANTHROPIC_API_KEY` (already needed for Replay insights).
+   Without it, the AI insight card says it isn't switched on.
 2. Supabase → Authentication → URL Configuration: set the Site URL to the live site and add `https://<your-site>/portfolio` to Redirect URLs (plus `http://localhost:5173/portfolio` for local work).
 3. Supabase's built-in email sender is only meant for testing and sends very few emails an hour. Before inviting users, add your own SMTP under Authentication → Emails (any provider: Resend, Postmark, Amazon SES…), and adjust the "Magic link" email text if you like.

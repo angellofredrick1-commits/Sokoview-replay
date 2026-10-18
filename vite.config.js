@@ -16,6 +16,7 @@ export default defineConfig({
         stock: resolve(__dirname, "stock.html"),
         dividends: resolve(__dirname, "dividends.html"),
         portfolio: resolve(__dirname, "portfolio.html"),
+        market: resolve(__dirname, "market.html"),
       },
     },
   },

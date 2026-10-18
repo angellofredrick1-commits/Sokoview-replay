@@ -43,6 +43,9 @@
   --sv-chart-axis: #9ca3af;
   --sv-chart-ref: #d1d5db;
   --sv-series-b: #0a0a0a;
+  /* two-series charts (validated light + dark, CVD-safe): you vs benchmark, bought vs sold */
+  --sv-series-1: #16a34a;
+  --sv-series-2: #2a78d6;
 
   /* texture, depth */
   --sv-dot: rgba(0, 0, 0, 0.05);
@@ -85,6 +88,8 @@
   --sv-chart-axis: #7d877f;
   --sv-chart-ref: #34423a;
   --sv-series-b: #f5f7f5;
+  --sv-series-1: #16a34a;
+  --sv-series-2: #3987e5;
   --sv-dot: rgba(255, 255, 255, 0.05);
   --sv-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
   --sv-glass: rgba(12, 15, 13, 0.9);
