@@ -377,7 +377,7 @@ const prettyDate = (d) =>
   });
 
 const A_COLOR = "#22c55e";
-const B_COLOR = "#0a0a0a";
+const B_COLOR = "var(--sv-series-b)";
 
 /* ============================================================================
    4. UI ATOMS
@@ -399,7 +399,7 @@ function StockMark({ symbol, size = 20, ring = false }) {
         className="inline-flex items-center justify-center rounded-full flex-shrink-0 font-extrabold text-white"
         style={{ ...px, background: monogramColor(symbol),
                  fontSize: Math.max(7, size * 0.34), letterSpacing: "-0.02em",
-                 boxShadow: ring ? "0 0 0 2px #fff" : undefined }}
+                 boxShadow: ring ? "0 0 0 2px var(--sv-page)" : undefined }}
         aria-label={symbol}
       >
         {monogramText(symbol)}
@@ -412,8 +412,8 @@ function StockMark({ symbol, size = 20, ring = false }) {
       alt={symbol}
       onError={() => setFailed(true)}
       loading="lazy"
-      className="rounded-full object-contain bg-white flex-shrink-0"
-      style={{ ...px, boxShadow: ring ? "0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.2)" : undefined }}
+      className="rounded-full object-contain bg-page flex-shrink-0"
+      style={{ ...px, boxShadow: ring ? "0 0 0 2px var(--sv-page), 0 1px 4px rgba(0,0,0,.2)" : undefined }}
     />
   );
 }
@@ -440,7 +440,7 @@ function makeLeadMarker(symbol, color, lastIndex, opts = {}) {
     return (
       <g style={{ pointerEvents: "none" }}>
         {/* the mark */}
-        <circle cx={cx} cy={cy} r={r + 3} fill="#fff" />
+        <circle cx={cx} cy={cy} r={r + 3} fill="var(--sv-page)" />
         <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={color} strokeWidth={2.5} />
         {url ? (
           <>
@@ -461,9 +461,9 @@ function makeLeadMarker(symbol, color, lastIndex, opts = {}) {
         {/* rank badge */}
         {rank != null && (
           <>
-            <circle cx={cx + r - 1} cy={cy + r - 1} r={8} fill={color} stroke="#fff" strokeWidth={2} />
+            <circle cx={cx + r - 1} cy={cy + r - 1} r={8} fill={color} stroke="var(--sv-page)" strokeWidth={2} />
             <text x={cx + r - 1} y={cy + r - 1} textAnchor="middle" dominantBaseline="central"
-              fontSize={9} fontWeight="800" fill="#fff">{rank}</text>
+              fontSize={9} fontWeight="800" fill={color === B_COLOR ? "var(--sv-page)" : "#fff"}>{rank}</text>
           </>
         )}
 
@@ -473,21 +473,21 @@ function makeLeadMarker(symbol, color, lastIndex, opts = {}) {
           {winner && <tspan fontSize={12}> ♛</tspan>}
         </text>
         <text x={x + (label?.length ?? 0) * 7.4 + (winner ? 14 : 6)} y={cy - 20}
-          fontSize={9.5} fontWeight="700" fill="#9ca3af" letterSpacing="0.06em">
+          fontSize={11} fontWeight="700" fill="var(--sv-chart-axis)">
           {ticker}
         </text>
 
         {/* value pill */}
         <rect x={x} y={cy - 13} rx={6} height={26}
-          width={Math.max(96, String(value).length * 8.6 + 20)} fill="#0a0a0a" />
+          width={Math.max(96, String(value).length * 8.6 + 20)} fill="var(--sv-inverse)" />
         <text x={x + 10} y={cy} dominantBaseline="central"
-          fontSize={13} fontWeight="800" fill="#fff" className="mono">
+          fontSize={13} fontWeight="800" fill="var(--sv-on-inverse)">
           {value}
         </text>
 
         {/* return */}
         <text x={x} y={cy + 27} fontSize={11.5} fontWeight="800"
-          fill={ret != null && ret < 0 ? "#dc2626" : "#16a34a"}>
+          fill={ret != null && ret < 0 ? "var(--sv-down-ink)" : "var(--sv-accent-ink)"}>
           {ret == null ? "" : (ret >= 0 ? "+" : "") + ret.toFixed(1) + "%"}
         </text>
       </g>
@@ -498,15 +498,15 @@ function makeLeadMarker(symbol, color, lastIndex, opts = {}) {
 function Logo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="w-7 h-7 bg-neutral-950 rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
-        <div className="w-[3.5px] h-[5px] rounded-sm bg-green-500" />
-        <div className="w-[3.5px] h-[8px] rounded-sm bg-green-500" />
-        <div className="w-[3.5px] h-[11px] rounded-sm bg-green-500" />
+      <div className="w-7 h-7 bg-inverse rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
+        <div className="w-[3.5px] h-[5px] rounded-sm bg-accent" />
+        <div className="w-[3.5px] h-[8px] rounded-sm bg-accent" />
+        <div className="w-[3.5px] h-[11px] rounded-sm bg-accent" />
       </div>
-      <span className="text-[15px] font-extrabold tracking-tight text-neutral-950">
+      <span className="text-[15px] font-extrabold tracking-tight text-ink">
         sokoview
       </span>
-      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-green-600 bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
+      <span className="text-[13px] font-bold text-accent-ink bg-accent-soft border border-accent/25 px-2 py-[3px] rounded-full">
         replay
       </span>
     </div>
@@ -515,7 +515,7 @@ function Logo() {
 
 function Eyebrow({ children }) {
   return (
-    <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 mb-2">
+    <div className="text-[12.5px] font-bold text-faint mb-2">
       {children}
     </div>
   );
@@ -524,16 +524,16 @@ function Eyebrow({ children }) {
 function Seg({ options, value, onChange, accent = "green" }) {
   const on =
     accent === "green"
-      ? "bg-green-500 text-white"
-      : "bg-neutral-950 text-white";
+      ? "bg-accent text-on-accent"
+      : "bg-inverse text-on-inverse";
   return (
-    <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+    <div className="flex gap-1 p-1 bg-surface-2 rounded-lg">
       {options.map((o) => (
         <button
           key={o.v}
           onClick={() => onChange(o.v)}
-          className={`flex-1 text-[11px] font-bold py-1.5 px-2 rounded-md transition-colors ${
-            value === o.v ? on : "text-gray-500 hover:text-neutral-900"
+          className={`flex-1 text-[12.5px] font-bold py-1.5 px-2 rounded-md transition-colors ${
+            value === o.v ? on : "text-muted hover:text-ink"
           }`}
         >
           {o.l}
@@ -549,11 +549,11 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
       <Eyebrow>{label}</Eyebrow>
       <div
         className={`flex items-center border rounded-lg overflow-hidden ${
-          disabled ? "bg-gray-50 border-gray-200" : "bg-white border-gray-300"
+          disabled ? "bg-surface border-line" : "bg-page border-line-strong"
         }`}
       >
         {prefix && (
-          <span className="pl-3 text-[11px] font-bold text-gray-400">{prefix}</span>
+          <span className="pl-3 text-[13.5px] font-bold text-faint">{prefix}</span>
         )}
         <input
           type="number"
@@ -561,7 +561,7 @@ function NumField({ label, value, onChange, prefix, step = 1000, disabled }) {
           disabled={disabled}
           value={value}
           onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-          className="w-full px-2.5 py-2 text-[13px] font-bold text-neutral-950 outline-none tabular-nums bg-transparent disabled:text-gray-400"
+          className="w-full px-2.5 py-2 text-[13px] font-bold text-ink outline-none tabular-nums bg-transparent disabled:text-faint"
         />
       </div>
     </label>
@@ -576,18 +576,18 @@ function Toggle({ label, checked, onChange, hint }) {
     >
       <div
         className={`mt-[1px] w-8 h-[18px] rounded-full flex-shrink-0 transition-colors relative ${
-          checked ? "bg-green-500" : "bg-gray-300"
+          checked ? "bg-accent" : "bg-line-strong"
         }`}
       >
         <div
-          className={`absolute top-[2px] w-[14px] h-[14px] bg-white rounded-full transition-all ${
+          className={`absolute top-[2px] w-[14px] h-[14px] bg-page rounded-full transition-all ${
             checked ? "left-[16px]" : "left-[2px]"
           }`}
         />
       </div>
       <div>
-        <div className="text-[12px] font-bold text-neutral-900 leading-tight">{label}</div>
-        {hint && <div className="text-[10.5px] text-gray-400 leading-snug mt-0.5">{hint}</div>}
+        <div className="text-[13px] font-bold text-ink leading-tight">{label}</div>
+        {hint && <div className="text-[13px] text-faint leading-snug mt-0.5">{hint}</div>}
       </div>
     </button>
   );
@@ -595,14 +595,14 @@ function Toggle({ label, checked, onChange, hint }) {
 
 function Stat({ label, value, sub, tone = "default", big }) {
   const tones = {
-    default: "text-neutral-950",
-    green: "text-green-600",
-    red: "text-red-600",
-    muted: "text-gray-400",
+    default: "text-ink",
+    green: "text-accent-ink",
+    red: "text-down-ink",
+    muted: "text-faint",
   };
   return (
     <div>
-      <div className="text-[8.5px] font-bold uppercase tracking-[0.1em] text-gray-400">
+      <div className="text-[12.5px] font-bold text-faint">
         {label}
       </div>
       <div
@@ -612,7 +612,7 @@ function Stat({ label, value, sub, tone = "default", big }) {
       >
         {value}
       </div>
-      {sub && <div className="text-[10px] text-gray-400 tabular-nums">{sub}</div>}
+      {sub && <div className="text-[13px] text-faint tabular-nums">{sub}</div>}
     </div>
   );
 }
@@ -628,16 +628,16 @@ function LiquidityNote({ liq, spread }) {
     if (spread == null) return null;
     if (spread <= 0) {
       return (
-        <div className="mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border
-                        bg-green-50 border-green-200 text-green-700">
+        <div className="mt-2 text-[12px] leading-snug rounded-md px-2 py-1.5 border
+                        bg-accent-soft border-accent/30 text-accent-ink">
           No spread — you buy and sell at the same price.
         </div>
       );
     }
     return (
-      <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
-        spread >= 1.5 ? "bg-amber-50 border-amber-200 text-amber-700"
-                      : "bg-gray-50 border-gray-200 text-gray-600"}`}>
+      <div className={`mt-2 text-[12px] leading-snug rounded-md px-2 py-1.5 border ${
+        spread >= 1.5 ? "bg-warn-soft border-warn/30 text-warn-ink"
+                      : "bg-surface border-line text-body"}`}>
         {spread.toFixed(2)}% exit load. The replay buys at the sale price and values at the
         repurchase price, so this is already priced in.
       </div>
@@ -648,9 +648,9 @@ function LiquidityNote({ liq, spread }) {
   const warn = liq.pctTraded < 55 || liq.dry > 21;
   if (!bad && !warn) return null;
   return (
-    <div className={`mt-2 text-[10px] leading-snug rounded-md px-2 py-1.5 border ${
-      bad ? "bg-red-50 border-red-200 text-red-700"
-          : "bg-amber-50 border-amber-200 text-amber-700"}`}>
+    <div className={`mt-2 text-[12px] leading-snug rounded-md px-2 py-1.5 border ${
+      bad ? "bg-down-soft border-down/30 text-down-ink"
+          : "bg-warn-soft border-warn/30 text-warn-ink"}`}>
       Traded on {liq.pctTraded.toFixed(0)}% of days, longest gap {liq.dry} days.
       {bad
         ? " Too thin to simulate regular buying — treat any result as indicative only."
@@ -664,19 +664,19 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
   return (
     <div
       className={`rounded-xl border p-3.5 transition-opacity ${
-        dim ? "opacity-40 border-gray-200" : "border-gray-300"
+        dim ? "opacity-40 border-line" : "border-line-strong"
       }`}
-      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : "#d4d4d4" } : {}}
+      style={!dim ? { borderColor: color === A_COLOR ? "rgba(34,197,94,.35)" : "var(--sv-line-strong)" } : {}}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-          <span className="text-[12px] font-extrabold text-neutral-950">{title}</span>
+          <span className="text-[13px] font-extrabold text-ink">{title}</span>
         </div>
         {canDisable && (
           <button
             onClick={onToggle}
-            className="text-[10px] font-bold text-gray-400 hover:text-neutral-900"
+            className="text-[13px] font-bold text-faint hover:text-ink"
           >
             {enabled ? "Remove" : "Add"}
           </button>
@@ -691,7 +691,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
             <select
               value={leg.symbol}
               onChange={(e) => set({ symbol: e.target.value })}
-              className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-neutral-950 outline-none"
+              className="w-full appearance-none bg-page border border-line-strong rounded-lg pl-3 pr-8 py-2 text-[13px] font-bold text-ink outline-none"
             >
               {groupedSymbols
                 ? groupedSymbols.map((g) => (
@@ -716,7 +716,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                     </option>
                   ))}
             </select>
-            <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <ChevronDown className="w-3.5 h-3.5 text-faint absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
           <LiquidityNote liq={liq} spread={spread} />
         </div>
@@ -749,14 +749,14 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
                 <select
                   value={leg.freq}
                   onChange={(e) => set({ freq: e.target.value })}
-                  className="w-full appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-7 py-2 text-[12.5px] font-bold text-neutral-950 outline-none"
+                  className="w-full appearance-none bg-page border border-line-strong rounded-lg pl-3 pr-7 py-2 text-[13.5px] font-bold text-ink outline-none"
                 >
                   <option value="weekly">Weekly</option>
                   <option value="monthly">Monthly</option>
                   <option value="quarterly">Quarterly</option>
                   <option value="yearly">Yearly</option>
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-faint absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -771,7 +771,7 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
               disabled={lockLump}
             />
             {lockLump && (
-              <div className="text-[10px] text-gray-400 mt-1 leading-snug">
+              <div className="text-[13px] text-faint mt-1 leading-snug">
                 Matched to the other plan's total. Turn off capital matching to set it yourself.
               </div>
             )}
@@ -1176,45 +1176,41 @@ export default function SokoviewReplay() {
   const noData = n === 0;
 
   return (
-    <div className="w-full min-h-screen bg-white text-neutral-950 antialiased">
+    <div className="w-full min-h-screen bg-page text-ink antialiased">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
-        .serif { font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif; }
-        .mono  { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
-        * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
-        .dots { background-image: radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px); background-size: 20px 20px; }
+        .dots { background-image: radial-gradient(circle, var(--sv-dot) 1px, transparent 1px); background-size: 20px 20px; }
         input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; }
-        input[type=range]::-webkit-slider-runnable-track{ height:5px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:17px; height:17px; margin-top:-6px; border-radius:50%; background:#22c55e; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,.28); cursor:pointer; }
-        input[type=range]::-moz-range-track{ height:4px; background:#e5e7eb; border-radius:99px; }
-        input[type=range]::-moz-range-thumb{ width:17px; height:17px; border-radius:50%; background:#22c55e; border:3px solid #fff; cursor:pointer; }
+        input[type=range]::-webkit-slider-runnable-track{ height:5px; background:var(--sv-line); border-radius:99px; }
+        input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:17px; height:17px; margin-top:-6px; border-radius:50%; background:var(--sv-accent); border:3px solid var(--sv-page); box-shadow:0 1px 5px rgba(0,0,0,.28); cursor:pointer; }
+        input[type=range]::-moz-range-track{ height:4px; background:var(--sv-line); border-radius:99px; }
+        input[type=range]::-moz-range-thumb{ width:17px; height:17px; border-radius:50%; background:var(--sv-accent); border:3px solid var(--sv-page); cursor:pointer; }
+        input[type=range]:focus-visible{ outline:2px solid var(--sv-accent); outline-offset:4px; border-radius:99px; }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
       `}</style>
 
       {/* ---------- header ---------- */}
       <SiteNav active="replay" />
-      <header className="border-b border-gray-200 bg-white">
+      <header className="border-b border-line bg-page">
        <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-[18px] font-extrabold tracking-tight leading-tight">Replay</h1>
-          <p className="text-[11.5px] text-gray-500">What a DSE investment would be worth today, played back week by week.</p>
+          <h1 className="text-[15px] font-bold text-accent-ink leading-tight">Replay</h1>
+          <p className="text-[13.5px] text-muted">What a DSE investment would be worth today, played back week by week.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="flex gap-1 p-1 bg-surface-2 rounded-lg">
             <button
               onClick={() => setSource("demo")}
-              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
-                source === "demo" ? "bg-neutral-950 text-white" : "text-gray-500"
+              className={`flex items-center gap-1.5 text-[12.5px] font-bold py-1.5 px-3 rounded-md ${
+                source === "demo" ? "bg-inverse text-on-inverse" : "text-muted"
               }`}
             >
               <FlaskConical className="w-3 h-3" /> Sample data
             </button>
             <button
               onClick={() => setSource("live")}
-              className={`flex items-center gap-1.5 text-[11px] font-bold py-1.5 px-3 rounded-md ${
-                source === "live" ? "bg-green-500 text-white" : "text-gray-500"
+              className={`flex items-center gap-1.5 text-[12.5px] font-bold py-1.5 px-3 rounded-md ${
+                source === "live" ? "bg-accent text-on-accent" : "text-muted"
               }`}
             >
               <Plug className="w-3 h-3" /> Sokoview API
@@ -1226,15 +1222,15 @@ export default function SokoviewReplay() {
 
       {/* ---------- live panel ---------- */}
       {source === "live" && (
-        <div className="border-b border-gray-200 bg-gray-50 px-5 py-4">
+        <div className="border-b border-line bg-surface px-5 py-4">
           <div className="max-w-6xl mx-auto">
             <div className="flex items-end justify-between gap-3 flex-wrap">
               <div>
                 <Eyebrow>Data source</Eyebrow>
-                <div className="text-[12px] font-bold text-neutral-900">
+                <div className="text-[13px] font-bold text-ink">
                   Sokoview price history · split &amp; bonus adjusted
                 </div>
-                <div className="text-[10.5px] text-gray-500 mt-0.5">
+                <div className="text-[13px] text-muted mt-0.5">
                   {universe.length
                     ? `${universe.length} instruments · ${universe[0]?.first ?? ""} to ${universe[0]?.last ?? ""}`
                     : "Loading universe…"}
@@ -1255,7 +1251,7 @@ export default function SokoviewReplay() {
                 </div>
                 <button
                   onClick={() => setPasteOpen((v) => !v)}
-                  className="border border-gray-300 bg-white text-[11px] font-bold px-3 py-2.5 rounded-lg hover:border-neutral-900"
+                  className="border border-line-strong bg-page text-[13.5px] font-bold px-3 py-2.5 rounded-lg hover:border-ink"
                 >
                   Paste JSON
                 </button>
@@ -1263,21 +1259,21 @@ export default function SokoviewReplay() {
             </div>
 
             {conn.state === "loading" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-gray-500">
+              <div className="mt-2.5 flex items-center gap-1.5 text-[13.5px] font-bold text-muted">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading price history…
               </div>
             )}
             {conn.state === "ok" && (
-              <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold text-green-700">
+              <div className="mt-2.5 flex items-center gap-1.5 text-[13.5px] font-bold text-accent-ink">
                 <Check className="w-3.5 h-3.5" /> {conn.msg}
               </div>
             )}
             {conn.state === "err" && (
-              <div className="mt-2.5 flex items-start gap-1.5 text-[11px] font-semibold text-red-600">
+              <div className="mt-2.5 flex items-start gap-1.5 text-[13.5px] font-semibold text-down-ink">
                 <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
                 <span>
                   {conn.msg}
-                  <span className="block text-gray-500 font-normal mt-0.5">
+                  <span className="block text-muted font-normal mt-0.5">
                     Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy.
                   </span>
                 </span>
@@ -1285,17 +1281,17 @@ export default function SokoviewReplay() {
             )}
 
             {pasteOpen && (
-              <div className="mt-3 border-t border-gray-200 pt-3">
+              <div className="mt-3 border-t border-line pt-3">
                 <div className="flex gap-2 mb-2">
                   <input
                     value={pasteSym}
                     onChange={(e) => setPasteSym(e.target.value.toUpperCase())}
-                    className="w-28 bg-white border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none"
+                    className="w-28 bg-page border border-line-strong rounded-lg px-3 py-2 text-[13px] font-bold outline-none"
                     placeholder="SYMBOL"
                   />
                   <button
                     onClick={ingestPaste}
-                    className="bg-green-500 text-white text-[11px] font-bold px-4 py-2 rounded-lg hover:bg-green-600"
+                    className="bg-accent text-on-accent text-[13.5px] font-bold px-4 py-2 rounded-lg hover:bg-accent-strong"
                   >
                     Load into replay
                   </button>
@@ -1305,7 +1301,7 @@ export default function SokoviewReplay() {
                   onChange={(e) => setPasteText(e.target.value)}
                   rows={4}
                   placeholder='Paste the raw response, e.g. {"data":[{"date":"2024-01-02","close":540}, …]}'
-                  className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-[11px] font-mono outline-none focus:border-green-500"
+                  className="w-full bg-page border border-line-strong rounded-lg px-3 py-2 text-[13.5px] outline-none focus:border-accent"
                 />
               </div>
             )}
@@ -1325,11 +1321,11 @@ export default function SokoviewReplay() {
                 <div className="text-[15px] font-extrabold mb-1.5">
                   These two are priced in different currencies
                 </div>
-                <div className="text-[12px] text-gray-500 leading-relaxed">
+                <div className="text-[13px] text-muted leading-relaxed">
                   {currencyClash.a.symbol} is quoted in{" "}
-                  <strong className="text-neutral-900">{currencyClash.a.currency}</strong> and{" "}
+                  <strong className="text-ink">{currencyClash.a.currency}</strong> and{" "}
                   {currencyClash.b.symbol} in{" "}
-                  <strong className="text-neutral-900">{currencyClash.b.currency}</strong>. Running
+                  <strong className="text-ink">{currencyClash.b.currency}</strong>. Running
                   them against each other would compare a shilling return with a dollar one and
                   present the exchange rate as performance. Pick two in the same currency, or turn
                   the second plan off to replay {currencyClash.a.symbol} on its own.
@@ -1338,32 +1334,24 @@ export default function SokoviewReplay() {
             ) : noData ? (
               <div className="py-10 text-center">
                 <div className="text-[15px] font-extrabold mb-1">No price history loaded</div>
-                <div className="text-[12px] text-gray-500">
+                <div className="text-[13px] text-muted">
                   Load a symbol from the Sokoview API, or switch to sample data to explore the tool.
                 </div>
               </div>
             ) : (
               <>
-                {/* ---- editorial headline ---- */}
-                <div className="text-center max-w-3xl mx-auto mb-6">
-                  <div className="inline-flex items-center gap-2 text-[9px] font-bold uppercase
-                                  tracking-[0.16em] text-gray-500 bg-white border border-gray-200
-                                  px-3 py-1.5 rounded-full mb-5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                    Sokoview historical replay
-                  </div>
-
-                  <h1 className="text-[30px] sm:text-[40px] font-extrabold tracking-[-0.035em]
-                                 leading-[1.04] text-neutral-950">
+                {/* ---- headline: same sentence-led hero as Home and Dividends ---- */}
+                <div className="max-w-3xl mb-7">
+                  <h1 className="text-[30px] sm:text-[44px] font-bold tracking-[-0.035em] leading-[1.06] text-ink [text-wrap:balance]">
                     {headline.map((part, i) =>
                       part.kind === "amount" ? (
                         <span key={i} style={{ color: part.color }}>{part.text}</span>
                       ) : part.kind === "name" ? (
-                        <em key={i} className="serif not-italic" style={{ fontStyle: "italic" }}>
+                        <b key={i} className="font-extrabold" style={{ boxShadow: "inset 0 -0.16em 0 var(--sv-accent)" }}>
                           {part.text}
-                        </em>
+                        </b>
                       ) : part.kind === "muted" ? (
-                        <span key={i} className="text-gray-400">{part.text}</span>
+                        <span key={i} className="text-faint">{part.text}</span>
                       ) : (
                         <span key={i}>{part.text}</span>
                       )
@@ -1371,17 +1359,17 @@ export default function SokoviewReplay() {
                   </h1>
 
                   {/* logo chips */}
-                  <div className="flex items-center justify-center gap-7 mt-5">
+                  <div className="flex items-center gap-7 mt-5 flex-wrap">
                     {legs.map((L) => (
                       <div key={L.key} className="flex items-center gap-2.5">
                         <span className="rounded-full p-[3px]" style={{ boxShadow: `0 0 0 2.5px ${L.color}` }}>
                           <StockMark symbol={L.leg.symbol} size={30} />
                         </span>
                         <div className="text-left leading-tight">
-                          <div className="text-[12.5px] font-extrabold" style={{ color: L.color }}>
+                          <div className="text-[13.5px] font-extrabold" style={{ color: L.color }}>
                             {L.name}
                           </div>
-                          <div className="text-[9.5px] font-bold text-gray-400 tracking-[0.06em] mono">
+                          <div className="text-[12.5px] font-bold text-faint ">
                             {L.leg.symbol}
                           </div>
                         </div>
@@ -1391,14 +1379,14 @@ export default function SokoviewReplay() {
                 </div>
 
                 {/* ---- chart frame ---- */}
-                <div className="border border-gray-200 rounded-2xl bg-white px-5 pt-5 pb-3 mb-4">
+                <div className="border border-line rounded-2xl bg-page px-5 pt-5 pb-3 mb-4">
                   <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
                     <div>
                       <div className="text-[26px] sm:text-[32px] font-extrabold tracking-[-0.03em]
                                       leading-none tabular-nums">
                         {monthLabel(barsA[t]?.date ?? barsA[0].date)}
                       </div>
-                      <div className="text-[11px] text-gray-500 font-semibold mt-1.5 tabular-nums">
+                      <div className="text-[13.5px] text-muted font-semibold mt-1.5 tabular-nums">
                         {legA.symbol} at {tzs(mA?.price)}
                         {mB && legB.symbol !== legA.symbol && <> · {legB.symbol} at {tzs(mB.price)}</>}
                       </div>
@@ -1417,15 +1405,15 @@ export default function SokoviewReplay() {
                   <div style={{ width: "100%", height: 330 }}>
                     <ResponsiveContainer>
                       <ComposedChart data={chartData} margin={{ top: 28, right: 186, bottom: 4, left: 0 }}>
-                        <CartesianGrid stroke="#f3f4f6" vertical={false} />
+                        <CartesianGrid stroke="var(--sv-chart-grid)" vertical={false} />
                         <XAxis dataKey="date" tickFormatter={(d) => monthLabel(d)} minTickGap={90}
-                          tick={{ fontSize: 10.5, fill: "#9ca3af", fontWeight: 700 }}
+                          tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 700 }}
                           axisLine={false} tickLine={false} />
                         <YAxis tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
-                          tick={{ fontSize: 10.5, fill: "#9ca3af", fontWeight: 700 }}
+                          tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 700 }}
                           axisLine={false} tickLine={false} width={54} />
                         <Tooltip
-                          contentStyle={{ borderRadius: 12, border: "1px solid #e5e7eb",
+                          contentStyle={{ borderRadius: 12, border: "1px solid var(--sv-line)", background: "var(--sv-page)", color: "var(--sv-ink)",
                                           fontSize: 11, fontWeight: 700,
                                           boxShadow: "0 4px 16px rgba(0,0,0,.08)" }}
                           labelFormatter={prettyDate}
@@ -1434,13 +1422,13 @@ export default function SokoviewReplay() {
                             { aVal: labelFor(legA), bVal: labelFor(legB),
                               aInv: "A money in", bInv: "B money in" }[name] ?? name,
                           ]} />
-                        {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                        {chartMode === "roi" && <ReferenceLine y={0} stroke="var(--sv-chart-ref)" />}
                         {chartMode === "value" && (
-                          <Line type="stepAfter" dataKey="aInv" stroke="#d1d5db" strokeWidth={1.5}
+                          <Line type="stepAfter" dataKey="aInv" stroke="var(--sv-chart-ref)" strokeWidth={1.5}
                                 strokeDasharray="4 4" dot={false} isAnimationActive={false} />
                         )}
                         {chartMode === "value" && bOn && (
-                          <Line type="stepAfter" dataKey="bInv" stroke="#e5e7eb" strokeWidth={1.5}
+                          <Line type="stepAfter" dataKey="bInv" stroke="var(--sv-line)" strokeWidth={1.5}
                                 strokeDasharray="4 4" dot={false} isAnimationActive={false} />
                         )}
                         <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.6}
@@ -1453,8 +1441,8 @@ export default function SokoviewReplay() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="text-center text-[9px] font-bold tracking-[0.14em] text-gray-400
-                                  uppercase mono pt-1">
+                  <div className="text-center text-[11px] font-bold text-faint
+                                    pt-1">
                     Historical portfolio value · adjusted for splits
                   </div>
                 </div>
@@ -1465,19 +1453,19 @@ export default function SokoviewReplay() {
                     {ranked.map((L, i) => (
                       <div key={L.key}
                         className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${
-                          i === 0 ? "border-green-500/35 bg-green-500/[0.05]" : "border-gray-200 bg-gray-50"}`}>
-                        <span className="text-[10px] font-extrabold text-gray-400 w-3">{i + 1}</span>
+                          i === 0 ? "border-accent/35 bg-green-500/[0.05]" : "border-line bg-surface"}`}>
+                        <span className="text-[13px] font-extrabold text-faint w-3">{i + 1}</span>
                         <StockMark symbol={L.leg.symbol} size={26} />
                         <div className="min-w-0">
-                          <div className="text-[12px] font-extrabold truncate">{L.name}</div>
-                          <div className="text-[9.5px] font-bold text-gray-400 mono">{L.leg.symbol}</div>
+                          <div className="text-[13px] font-extrabold truncate">{L.name}</div>
+                          <div className="text-[12.5px] font-bold text-faint ">{L.leg.symbol}</div>
                         </div>
                         <div className="ml-auto text-right">
-                          <div className="text-[15px] font-extrabold tabular-nums mono">
+                          <div className="text-[15px] font-extrabold tabular-nums ">
                             {tzs(L.m?.value)}
                           </div>
-                          <div className={`text-[10.5px] font-bold tabular-nums ${
-                            (L.m?.roi ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                          <div className={`text-[12px] font-bold tabular-nums ${
+                            (L.m?.roi ?? 0) >= 0 ? "text-accent-ink" : "text-down-ink"}`}>
                             {pct(L.m?.roi)}
                           </div>
                         </div>
@@ -1490,8 +1478,8 @@ export default function SokoviewReplay() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     onClick={() => (playing ? setPlaying(false) : play())}
-                    className="flex items-center gap-2 bg-neutral-950 text-white text-[12px]
-                               font-bold pl-4 pr-5 py-2.5 rounded-full hover:bg-neutral-800 flex-shrink-0"
+                    className="flex items-center gap-2 bg-inverse text-on-inverse text-[13px]
+                               font-bold pl-4 pr-5 py-2.5 rounded-full hover:bg-inverse/85 flex-shrink-0"
                   >
                     {playing
                       ? <Pause className="w-3.5 h-3.5" fill="currentColor" />
@@ -1500,8 +1488,8 @@ export default function SokoviewReplay() {
                   </button>
 
                   <button onClick={restart}
-                    className="w-9 h-9 rounded-full border border-gray-300 flex items-center
-                               justify-center hover:border-neutral-900 flex-shrink-0"
+                    className="w-9 h-9 rounded-full border border-line-strong flex items-center
+                               justify-center hover:border-ink flex-shrink-0"
                     aria-label="Restart replay">
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -1511,11 +1499,11 @@ export default function SokoviewReplay() {
                     className="flex-1 min-w-[160px] h-4 cursor-pointer"
                     aria-label="Scrub through history" />
 
-                  <div className="flex gap-1 p-1 bg-gray-100 rounded-full flex-shrink-0">
+                  <div className="flex gap-1 p-1 bg-surface-2 rounded-full flex-shrink-0">
                     {[0.5, 1, 2, 4].map((sp) => (
                       <button key={sp} onClick={() => setSpeed(sp)}
-                        className={`text-[10.5px] font-bold py-1 px-2.5 rounded-full ${
-                          speed === sp ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"}`}>
+                        className={`text-[12px] font-bold py-1 px-2.5 rounded-full ${
+                          speed === sp ? "bg-page shadow-sm text-ink" : "text-muted"}`}>
                         {sp}×
                       </button>
                     ))}
@@ -1537,10 +1525,10 @@ export default function SokoviewReplay() {
                     <button
                       key={y}
                       onClick={() => setStartYear(y)}
-                      className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border ${
+                      className={`text-[12.5px] font-bold px-2.5 py-1.5 rounded-lg border ${
                         startYear === y
-                          ? "bg-neutral-950 text-white border-neutral-950"
-                          : "border-gray-300 text-gray-500 hover:border-neutral-900"
+                          ? "bg-inverse text-on-inverse border-inverse"
+                          : "border-line-strong text-muted hover:border-ink"
                       }`}
                     >
                       {y}
@@ -1548,7 +1536,7 @@ export default function SokoviewReplay() {
                   ))}
                 </div>
                 {periodsA <= 12 && legA.strategy === "dca" && (
-                  <div className="text-[10px] text-amber-600 mt-1.5 leading-snug">
+                  <div className="text-[13px] text-warn-ink mt-1.5 leading-snug">
                     Only {periodsA} {legA.freq} contribution{periodsA === 1 ? "" : "s"} in this
                     window — too few for a recurring plan to say much.
                   </div>
@@ -1567,7 +1555,7 @@ export default function SokoviewReplay() {
                     <button
                       key={p.k}
                       onClick={() => applyPreset(p.k)}
-                      className="text-[10.5px] font-bold text-left px-2.5 py-2 rounded-lg border border-gray-300 hover:border-green-500 hover:bg-green-500/5 leading-tight"
+                      className="text-[13px] font-bold text-left px-2.5 py-2 rounded-lg border border-line-strong hover:border-accent hover:bg-accent/5 leading-tight"
                     >
                       {p.l}
                     </button>
@@ -1605,7 +1593,7 @@ export default function SokoviewReplay() {
                 spread={spreadOf(legB.symbol)}
               />
 
-              <div className="rounded-xl border border-gray-300 p-3.5 space-y-3">
+              <div className="rounded-xl border border-line-strong p-3.5 space-y-3">
                 <Eyebrow>Assumptions</Eyebrow>
                 {bOn &&
                   ((legA.strategy === "lump" && legB.strategy === "dca") ||
@@ -1639,7 +1627,7 @@ export default function SokoviewReplay() {
                       onChange={(e) => setFeePct(Number(e.target.value))}
                       className="flex-1 h-4"
                     />
-                    <span className="text-[12px] font-extrabold tabular-nums w-11 text-right">
+                    <span className="text-[13px] font-extrabold tabular-nums w-11 text-right">
                       {feePct.toFixed(1)}%
                     </span>
                   </div>
@@ -1649,7 +1637,7 @@ export default function SokoviewReplay() {
 
             {/* ---------- right: chart + results ---------- */}
             <section className="space-y-4">
-              <div className="border border-gray-200 rounded-2xl p-4">
+              <div className="border border-line rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <Seg
                     value={chartMode}
@@ -1660,7 +1648,7 @@ export default function SokoviewReplay() {
                       { v: "price", l: "Share price" },
                     ]}
                   />
-                  <div className="flex items-center gap-3 text-[10px] font-bold">
+                  <div className="flex items-center gap-3 text-[13px] font-bold">
                     <span className="flex items-center gap-1.5">
                       <span className="w-3 h-[2px]" style={{ background: A_COLOR }} /> Plan A
                     </span>
@@ -1670,8 +1658,8 @@ export default function SokoviewReplay() {
                       </span>
                     )}
                     {chartMode === "value" && (
-                      <span className="flex items-center gap-1.5 text-gray-400">
-                        <span className="w-3 border-t-2 border-dashed border-gray-400" /> Money in
+                      <span className="flex items-center gap-1.5 text-faint">
+                        <span className="w-3 border-t-2 border-dashed border-line-strong" /> Money in
                       </span>
                     )}
                   </div>
@@ -1680,17 +1668,17 @@ export default function SokoviewReplay() {
                 <div style={{ width: "100%", height: 300 }}>
                   <ResponsiveContainer>
                     <ComposedChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
-                      <CartesianGrid stroke="#f3f4f6" vertical={false} />
+                      <CartesianGrid stroke="var(--sv-chart-grid)" vertical={false} />
                       <XAxis
                         dataKey="date"
-                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
+                        tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
                         tickFormatter={(d) => d.slice(0, 7)}
                         minTickGap={50}
-                        axisLine={{ stroke: "#e5e7eb" }}
+                        axisLine={{ stroke: "var(--sv-line)" }}
                         tickLine={false}
                       />
                       <YAxis
-                        tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
+                        tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
                         tickFormatter={(v) => (chartMode === "roi" ? v.toFixed(0) + "%" : compact(v))}
                         axisLine={false}
                         tickLine={false}
@@ -1698,7 +1686,7 @@ export default function SokoviewReplay() {
                       />
                       <Tooltip
                         contentStyle={{
-                          borderRadius: 12, border: "1px solid #e5e7eb",
+                          borderRadius: 12, border: "1px solid var(--sv-line)", background: "var(--sv-page)", color: "var(--sv-ink)",
                           fontSize: 11, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,.08)",
                         }}
                         labelFormatter={prettyDate}
@@ -1707,13 +1695,13 @@ export default function SokoviewReplay() {
                           { aVal: "Plan A", bVal: "Plan B", aInv: "A money in", bInv: "B money in" }[name] ?? name,
                         ]}
                       />
-                      {chartMode === "roi" && <ReferenceLine y={0} stroke="#d1d5db" />}
+                      {chartMode === "roi" && <ReferenceLine y={0} stroke="var(--sv-chart-ref)" />}
                       {chartMode === "value" && (
                         <Line type="stepAfter" dataKey="aInv" stroke="#86efac" strokeWidth={1.5}
                               strokeDasharray="4 3" dot={false} isAnimationActive={false} />
                       )}
                       {chartMode === "value" && bOn && (
-                        <Line type="stepAfter" dataKey="bInv" stroke="#9ca3af" strokeWidth={1.5}
+                        <Line type="stepAfter" dataKey="bInv" stroke="var(--sv-chart-axis)" strokeWidth={1.5}
                               strokeDasharray="4 3" dot={false} isAnimationActive={false} />
                       )}
                       <Line type="monotone" dataKey="aVal" stroke={A_COLOR} strokeWidth={2.4}
@@ -1728,9 +1716,9 @@ export default function SokoviewReplay() {
               </div>
 
               {/* ---- full scorecard ---- */}
-              <section className="rounded-2xl bg-neutral-950 text-white px-5 sm:px-7 py-7">
+              <section className="rounded-2xl bg-surface border border-line text-ink px-5 sm:px-7 py-7">
                 <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
-                  <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-green-400">
+                  <div className="text-[12.5px] font-bold text-accent-ink">
                     Full scorecard
                   </div>
                   <h2 className="text-[22px] sm:text-[28px] font-extrabold tracking-[-0.03em] leading-none">
@@ -1743,21 +1731,21 @@ export default function SokoviewReplay() {
                     <div key={L.key}
                       className={`rounded-2xl border p-5 ${
                         i === 0 && ranked.length > 1
-                          ? "border-green-500/35 bg-green-500/[0.07]"
-                          : "border-white/10 bg-white/[0.03]"}`}>
+                          ? "border-accent/40 bg-accent-soft"
+                          : "border-line bg-page"}`}>
                       <div className="flex items-center gap-2.5 mb-4">
-                        <span className="text-[10px] font-extrabold text-green-400">
+                        <span className="text-[13px] font-extrabold text-accent-ink">
                           #{i + 1}
                         </span>
                         <StockMark symbol={L.leg.symbol} size={22} />
-                        <span className="text-[15px] font-extrabold mono">{L.leg.symbol}</span>
-                        <span className="text-[10.5px] font-bold text-white/40 truncate">
+                        <span className="text-[15px] font-extrabold ">{L.leg.symbol}</span>
+                        <span className="text-[13px] font-bold text-faint truncate">
                           {L.leg.strategy === "lump" ? "one-time" : `${L.leg.freq} top-up`}
                         </span>
                       </div>
 
                       <div className="text-[34px] sm:text-[40px] font-extrabold tracking-[-0.03em]
-                                      leading-none tabular-nums mono mb-5">
+                                      leading-none tabular-nums mb-5">
                         {tzs(L.m.value)}
                       </div>
 
@@ -1774,11 +1762,11 @@ export default function SokoviewReplay() {
                           { k: "Shares held", v: nf.format(Math.round(L.m.shares)), tone: "dim" },
                         ].map((row) => (
                           <div key={row.k}
-                            className="flex items-center justify-between py-2.5 border-t border-white/[0.07]">
-                            <dt className="text-[11.5px] text-white/45">{row.k}</dt>
-                            <dd className={`text-[12.5px] font-bold tabular-nums mono ${
-                              row.tone === "pos" ? "text-green-400"
-                                : row.tone === "neg" ? "text-red-400" : "text-white/80"}`}>
+                            className="flex items-center justify-between py-2.5 border-t border-line">
+                            <dt className="text-[13.5px] text-muted">{row.k}</dt>
+                            <dd className={`text-[13.5px] font-bold tabular-nums ${
+                              row.tone === "pos" ? "text-accent-ink"
+                                : row.tone === "neg" ? "text-down-ink" : "text-ink"}`}>
                               {row.v}
                             </dd>
                           </div>
@@ -1786,7 +1774,7 @@ export default function SokoviewReplay() {
                       </dl>
 
                       {L.m.cash > 1 && (
-                        <div className="text-[10px] text-white/30 mt-3 tabular-nums">
+                        <div className="text-[13px] text-faint mt-3 tabular-nums">
                           {tzs(L.m.cash)} still uninvested
                         </div>
                       )}
@@ -1796,12 +1784,12 @@ export default function SokoviewReplay() {
               </section>
 
               {/* method note */}
-              <div className="flex gap-2.5 text-[11px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
-                <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+              <div className="flex gap-2.5 text-[13.5px] text-muted leading-relaxed border border-line rounded-xl p-3.5">
+                <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-faint" />
                 <p>
                   Comparing a one-time investment against a recurring one on total return alone is
                   misleading — the recurring plan has less money in the market for less time.
-                  The <strong className="text-neutral-900">annualised money-weighted return</strong> above
+                  The <strong className="text-ink">annualised money-weighted return</strong> above
                   accounts for when each contribution actually landed, so it's the fairer number
                   to judge them by. Past results don't predict future ones.
                 </p>

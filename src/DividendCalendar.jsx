@@ -571,10 +571,6 @@ export default function DividendCalendar() {
   const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
-    document.documentElement.classList.add('sv-dark-ok');
-    return () => document.documentElement.classList.remove('sv-dark-ok');
-  }, []);
-  useEffect(() => {
     loadCalendarData().then(setData).catch((e) => setError(e.message || String(e)));
   }, []);
   useEffect(() => { if (watchlist.length === 0 && scope === 'mine') setScope('all'); }, [watchlist, scope]);

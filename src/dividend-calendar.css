@@ -1,48 +1,34 @@
 /* Sokoview · Dividend calendar
-   Brand: Sora, white, #22c55e. Amber is reserved for the one date that needs action (last day to buy),
+   Colours come from src/theme/tokens.css. Amber is reserved for the one date that needs action (last day to buy),
    green for the day money arrives; every other date stays grey so those two read first. */
 
+@import './theme/tokens.css';
+
+/* Page-local names kept so the rules below read naturally; every value comes from
+   the shared tokens, so light/dark is handled once in src/theme/tokens.css. */
 :root {
-  --dc-bg: #ffffff;
-  --dc-surface: #f9fafb;
-  --dc-ink: #0a0a0a;
-  --dc-body: #4b5563;
-  --dc-muted: #6b7280;
-  --dc-faint: #9ca3af;
-  --dc-line: #e5e7eb;
-  --dc-green: #22c55e;
-  --dc-green-ink: #15803d;
-  --dc-green-bg: rgba(34, 197, 94, 0.1);
-  --dc-green-line: rgba(34, 197, 94, 0.35);
-  --dc-amber: #f59e0b;
-  --dc-amber-ink: #b45309;
-  --dc-amber-bg: #fef3c7;
-  --dc-grey-bg: #f3f4f6;
-  --dc-grey-ink: #374151;
-  --dc-dot: rgba(0, 0, 0, 0.05);
-  --dc-shadow: 0 1px 2px rgba(10, 10, 10, 0.06), 0 12px 32px rgba(10, 10, 10, 0.12);
-  --dc-radius: 14px;
-  color-scheme: light;
+  --dc-bg: var(--sv-page);
+  --dc-surface: var(--sv-surface);
+  --dc-ink: var(--sv-ink);
+  --dc-body: var(--sv-body);
+  --dc-muted: var(--sv-muted);
+  --dc-faint: var(--sv-faint);
+  --dc-line: var(--sv-line);
+  --dc-green: var(--sv-accent);
+  --dc-green-ink: var(--sv-accent-ink);
+  --dc-green-bg: var(--sv-accent-soft);
+  --dc-green-line: color-mix(in srgb, var(--sv-accent) 35%, transparent);
+  --dc-amber: var(--sv-warn);
+  --dc-amber-ink: var(--sv-warn-ink);
+  --dc-amber-bg: var(--sv-warn-soft);
+  --dc-grey-bg: var(--sv-surface-2);
+  --dc-grey-ink: var(--sv-body);
+  --dc-dot: var(--sv-dot);
+  --dc-shadow: var(--sv-shadow);
+  --dc-radius: var(--sv-radius-lg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not([data-theme='light']) {
-    --dc-bg: #0c0f0d; --dc-surface: #141916; --dc-ink: #f5f7f5; --dc-body: #c7cdc9; --dc-muted: #9aa39d;
-    --dc-faint: #6b746e; --dc-line: #253029; --dc-green-ink: #4ade80; --dc-green-bg: rgba(34, 197, 94, 0.14);
-    --dc-amber-ink: #fbbf24; --dc-amber-bg: rgba(245, 158, 11, 0.16); --dc-grey-bg: #1c231f; --dc-grey-ink: #d1d5db;
-    --dc-dot: rgba(255, 255, 255, 0.05); --dc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
-  }
-}
-:root.dark, :root[data-theme='dark'] {
-  --dc-bg: #0c0f0d; --dc-surface: #141916; --dc-ink: #f5f7f5; --dc-body: #c7cdc9; --dc-muted: #9aa39d;
-  --dc-faint: #6b746e; --dc-line: #253029; --dc-green-ink: #4ade80; --dc-green-bg: rgba(34, 197, 94, 0.14);
-  --dc-amber-ink: #fbbf24; --dc-amber-bg: rgba(245, 158, 11, 0.16); --dc-grey-bg: #1c231f; --dc-grey-ink: #d1d5db;
-  --dc-dot: rgba(255, 255, 255, 0.05); --dc-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
-  color-scheme: dark;
-}
-
-body.dc-page { margin: 0; background: var(--dc-bg); }
+body { margin: 0; }
 .dc, .dc * { box-sizing: border-box; }
 body.dc-noscroll { overflow: hidden; }
 
@@ -50,11 +36,11 @@ body.dc-noscroll { overflow: hidden; }
   min-height: 100vh;
   background: var(--dc-bg);
   color: var(--dc-body);
-  font: 400 15px/1.55 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 400 15px/1.55 var(--sv-font);
   font-variant-numeric: tabular-nums;
 }
 .dc :focus-visible { outline: 2px solid var(--dc-green); outline-offset: 2px; border-radius: 6px; }
-.dc button, .dc input { font: inherit; color: inherit; }
+.dc :where(button, input) { font: inherit; color: inherit; }
 .dc button { cursor: pointer; }
 .dc button:disabled { cursor: not-allowed; opacity: 0.45; }
 
@@ -112,8 +98,6 @@ body.dc-noscroll { overflow: hidden; }
 .dc-btn--ghost:hover:not(:disabled) { background: var(--dc-surface); }
 .dc-btn--small { min-height: 32px; padding: 0 12px; font-size: 13px; border-radius: 8px; }
 .dc-btn.is-disabled { opacity: 0.45; pointer-events: none; }
-.dc-top .dc-btn { background: var(--dc-green); border-color: var(--dc-green); color: #052e14 !important; }
-.dc-top .dc-btn:hover:not(:disabled) { background: #16a34a; color: #fff !important; }
 @media (max-width: 480px) { .dc-top .dc-btn { padding: 0 12px; font-size: 13px; } }
 
 /* controls */
@@ -310,12 +294,12 @@ body.dc-noscroll { overflow: hidden; }
 .dc-field label { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; }
 .dc-field__sep { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--dc-line); }
 .dc-sub__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
-.dc-sub__actions .dc-btn:first-child { background: var(--dc-green); border-color: var(--dc-green); color: #052e14 !important; }
+.dc-sub__actions .dc-btn:first-child { background: var(--dc-green); border-color: var(--dc-green); color: var(--sv-on-accent) !important; }
 .dc-copy { display: flex; gap: 8px; margin-top: 12px; }
 .dc-copy input { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--dc-line); background: var(--dc-surface); font-size: 12px; color: var(--dc-muted); }
 
 .dc-banner { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--dc-amber-bg); color: var(--dc-amber-ink); font-size: 14px; }
-.dc-banner--error { background: #fee2e2; color: #b91c1c; }
+.dc-banner--error { background: var(--sv-down-soft); color: var(--sv-down-ink); }
 .dc-empty { color: var(--dc-muted); font-size: 14px; margin: 8px 0; }
 .dc-skeleton { height: 420px; border-radius: var(--dc-radius); background: var(--dc-surface); }
 .dc-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--dc-line); font-size: 12px; color: var(--dc-muted); max-width: 80ch; }
@@ -392,7 +376,7 @@ body.dc-noscroll { overflow: hidden; }
 .dc-mini__d.is-today { box-shadow: inset 0 0 0 1.5px var(--dc-ink); color: var(--dc-ink); font-weight: 700; }
 .dc-mini__d--ev { font-weight: 700; cursor: pointer; background: var(--dc-grey-bg); color: var(--dc-grey-ink); }
 .dc-mini__d--lastbuy { background: var(--dc-amber); color: #3b2300; }
-.dc-mini__d--pay { background: var(--dc-green); color: #052e14; }
+.dc-mini__d--pay { background: var(--dc-green); color: var(--sv-on-accent); }
 .dc-mini__d--ev.is-past { background: var(--dc-grey-bg); color: var(--dc-muted); }
 .dc-mini__d--lastbuy.is-past { background: var(--dc-amber-bg); color: var(--dc-amber-ink); }
 .dc-mini__d--pay.is-past { background: var(--dc-green-bg); color: var(--dc-green-ink); }
@@ -413,6 +397,6 @@ body.dc-noscroll { overflow: hidden; }
 /* title row now that the shared nav owns the top bar */
 .dc-titlebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dc-titlebar .dc-title { margin: 0; }
-.dc-titlebar__sub { margin-left: auto; background: var(--dc-green); border-color: var(--dc-green); color: #052e14 !important; }
+.dc-titlebar__sub { margin-left: auto; background: var(--dc-green); border-color: var(--dc-green); color: var(--sv-on-accent) !important; }
 .dc-titlebar__sub:hover:not(:disabled) { background: #16a34a; color: #fff !important; }
 a.dc-btn { cursor: pointer; }

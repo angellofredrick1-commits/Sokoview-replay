@@ -1,4 +1,33 @@
 @import "tailwindcss";
+@import "./theme/tokens.css";
+
+/* Semantic colours for the Tailwind pages, backed by the shared tokens so they
+   switch with the theme: bg-page, bg-surface, text-ink, text-muted, border-line… */
+@theme inline {
+  --color-page: var(--sv-page);
+  --color-surface: var(--sv-surface);
+  --color-surface-2: var(--sv-surface-2);
+  --color-line: var(--sv-line);
+  --color-line-strong: var(--sv-line-strong);
+  --color-ink: var(--sv-ink);
+  --color-body: var(--sv-body);
+  --color-muted: var(--sv-muted);
+  --color-faint: var(--sv-faint);
+  --color-inverse: var(--sv-inverse);
+  --color-on-inverse: var(--sv-on-inverse);
+  --color-accent: var(--sv-accent);
+  --color-accent-strong: var(--sv-accent-strong);
+  --color-accent-ink: var(--sv-accent-ink);
+  --color-accent-soft: var(--sv-accent-soft);
+  --color-on-accent: var(--sv-on-accent);
+  --color-down: var(--sv-down);
+  --color-down-ink: var(--sv-down-ink);
+  --color-down-soft: var(--sv-down-soft);
+  --color-warn: var(--sv-warn);
+  --color-warn-ink: var(--sv-warn-ink);
+  --color-warn-soft: var(--sv-warn-soft);
+  --font-sans: var(--sv-font);
+}
 
 html, body, #root { height: 100%; margin: 0; }
-body { font-family: "Sora", ui-sans-serif, system-ui, sans-serif; }
+body { font-family: var(--sv-font); }
