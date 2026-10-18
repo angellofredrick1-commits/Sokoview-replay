@@ -35,6 +35,11 @@
   to = "/dividends.html"
   status = 200
 
+[[redirects]]
+  from = "/portfolio"
+  to = "/portfolio.html"
+  status = 200
+
 # Subscribable calendar feed: /dividends.ics?symbols=CRDB,NMB&types=lastbuy,pay
 [[redirects]]
   from = "/dividends.ics"

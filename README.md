@@ -8,6 +8,7 @@
 | `/replay` | Replay (was at `/`). Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
 | `/dividends` | Dividend calendar. Deep link: `/dividends?symbol=CRDB` | Investors |
 | `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB` | Investors |
+| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends received and due. Needs migration 0010 and Supabase Auth (see below) | Investors |
 | `/capture`, `/report` | Capture monitor and DSE report parser | Admin only, not in the navigation |
 
 Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
@@ -132,3 +133,21 @@ as a second fetch merged into the series by date.
   stale-while-revalidate, since DSE data is end-of-day.
 - The `/api/prices` endpoint is public. It validates the symbol and date format
   before calling upstream, but add rate limiting if the site is public-facing.
+
+## Portfolio
+
+Users sign in with an emailed link (Supabase Auth) and enter each buy and sell. The price fills in from that day's
+close (`price_on()`), or the last close before a weekend or holiday; they can change it to what they actually paid.
+Everything else is worked out in the browser by `src/lib/portfolio.js` (tests: `npm run test:portfolio`):
+
+- average-cost holdings, gain on holdings, realised gain on sales, fees included;
+- splits: trades before a split are restated in today's shares (100 NMB pre-split = 1,000 now);
+- dividends: entitled if held at the close before the ex-date; paid, due, and expected amounts after 5% tax;
+- a sell can't exceed the shares held on its date, and a buy that a later sell depends on can't be deleted.
+
+Trades are private: row-level security means a user can only read and change their own rows.
+
+**To switch it on**
+1. Run `supabase/migrations/0010_portfolio.sql` in the SQL editor.
+2. Supabase → Authentication → URL Configuration: set the Site URL to the live site and add `https://<your-site>/portfolio` to Redirect URLs (plus `http://localhost:5173/portfolio` for local work).
+3. Supabase's built-in email sender is only meant for testing and sends very few emails an hour. Before inviting users, add your own SMTP under Authentication → Emails (any provider: Resend, Postmark, Amazon SES…), and adjust the "Magic link" email text if you like.
