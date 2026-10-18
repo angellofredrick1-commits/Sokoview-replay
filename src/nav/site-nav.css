@@ -1,0 +1,128 @@
+/* Shared Sokoview navigation. Plain CSS with an sv- prefix so it sits on both the
+   Tailwind pages (Replay, Stocks) and the hand-styled ones (Home, Dividends). */
+
+:root {
+  --sv-bg: #ffffff;
+  --sv-surface: #f9fafb;
+  --sv-ink: #0a0a0a;
+  --sv-body: #4b5563;
+  --sv-muted: #6b7280;
+  --sv-line: #e5e7eb;
+  --sv-green: #22c55e;
+  --sv-green-ink: #15803d;
+  --sv-green-bg: rgba(34, 197, 94, 0.1);
+  --sv-red-ink: #b91c1c;
+  --sv-shadow: 0 1px 2px rgba(10, 10, 10, 0.06), 0 12px 32px rgba(10, 10, 10, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme='light']).sv-dark-ok {
+    --sv-bg: #0c0f0d; --sv-surface: #141916; --sv-ink: #f5f7f5; --sv-body: #c7cdc9; --sv-muted: #9aa39d;
+    --sv-line: #253029; --sv-green-ink: #4ade80; --sv-green-bg: rgba(34, 197, 94, 0.14); --sv-red-ink: #f87171;
+    --sv-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
+  :root.sv-dark-ok:not(.light):not([data-theme='light']) .sv-logo__mark { background: #1d2721; box-shadow: inset 0 0 0 1px #2f3b33; }
+}
+
+.sv-nav, .sv-nav *, .sv-tabbar, .sv-tabbar * { box-sizing: border-box; }
+.sv-nav {
+  position: sticky; top: 0; z-index: 40;
+  font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--sv-bg) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--sv-line);
+}
+.sv-nav__inner {
+  max-width: 1120px; margin: 0 auto; height: 60px; padding: 0 16px;
+  display: flex; align-items: center; gap: 28px;
+}
+@media (min-width: 720px) { .sv-nav__inner { padding: 0 24px; } }
+.sv-nav a { text-decoration: none; }
+.sv-nav :focus-visible, .sv-tabbar :focus-visible { outline: 2px solid var(--sv-green); outline-offset: 2px; border-radius: 8px; }
+
+.sv-logo { display: inline-flex; align-items: center; gap: 8px; }
+.sv-logo__mark {
+  width: 28px; height: 28px; border-radius: 7px; background: #0a0a0a;
+  display: inline-flex; align-items: flex-end; gap: 2.5px; padding: 0 6px 5px;
+}
+.sv-logo__mark i { display: block; width: 3.5px; border-radius: 1.5px; background: var(--sv-green); }
+.sv-logo__mark i:nth-child(1) { height: 5px; }
+.sv-logo__mark i:nth-child(2) { height: 8px; }
+.sv-logo__mark i:nth-child(3) { height: 11px; }
+.sv-logo__word { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; color: var(--sv-ink); }
+
+.sv-nav__tabs { display: flex; gap: 4px; height: 100%; }
+.sv-nav__tab {
+  position: relative; display: inline-flex; align-items: center; padding: 0 12px;
+  font-size: 14px; font-weight: 600; color: var(--sv-muted);
+}
+.sv-nav__tab:hover { color: var(--sv-ink); }
+.sv-nav__tab[aria-current='page'] { color: var(--sv-ink); }
+.sv-nav__tab[aria-current='page']::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--sv-green);
+}
+.sv-nav__search { margin-left: auto; width: min(300px, 32vw); }
+.sv-nav__searchbtn { display: none; }
+
+/* search */
+.sv-search { position: relative; width: 100%; font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
+.sv-search__icon { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; margin-top: -8px; color: var(--sv-muted); pointer-events: none; }
+.sv-search input {
+  width: 100%; height: 38px; padding: 0 12px 0 36px; border-radius: 10px;
+  border: 1px solid var(--sv-line); background: var(--sv-surface); color: var(--sv-ink);
+  font: inherit; font-size: 14px; outline: none;
+}
+.sv-search input::-webkit-search-cancel-button { display: none; }
+.sv-search input:focus { border-color: var(--sv-green); background: var(--sv-bg); box-shadow: 0 0 0 3px var(--sv-green-bg); }
+.sv-search__list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 50; margin: 0; padding: 6px; list-style: none;
+  background: var(--sv-bg); border: 1px solid var(--sv-line); border-radius: 12px; box-shadow: var(--sv-shadow);
+  max-height: min(420px, 70vh); overflow-y: auto;
+}
+.sv-search__list li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.sv-search__list li.is-active { background: var(--sv-surface); }
+.sv-search__text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.sv-search__text b { font-size: 14px; color: var(--sv-ink); }
+.sv-search__text small { font-size: 12px; color: var(--sv-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-search__kind { font-size: 11px; color: var(--sv-muted); border: 1px solid var(--sv-line); border-radius: 99px; padding: 1px 7px; }
+
+.sv-mark {
+  flex: none; display: inline-grid; place-items: center; overflow: hidden; border-radius: 8px;
+  background: #fff; box-shadow: inset 0 0 0 1px var(--sv-line); font-weight: 800; letter-spacing: -0.02em;
+}
+.sv-mark img { width: 100%; height: 100%; object-fit: contain; }
+.sv-mark--mono { color: #fff; box-shadow: none; }
+
+/* phone: tabs move to the bottom, search becomes an icon */
+.sv-tabbar { display: none; }
+@media (max-width: 719px) {
+  .sv-nav__inner { height: 56px; gap: 12px; justify-content: space-between; }
+  .sv-nav__tabs, .sv-nav__search { display: none; }
+  .sv-nav__searchbtn {
+    display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid var(--sv-line); background: var(--sv-surface); color: var(--sv-ink); cursor: pointer;
+  }
+  .sv-nav__searchbtn svg { width: 18px; height: 18px; }
+  .sv-nav__overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    background: var(--sv-bg);
+  }
+  .sv-nav__close { flex: none; width: 40px; height: 40px; border: 0; background: transparent; color: var(--sv-ink); display: grid; place-items: center; cursor: pointer; }
+  .sv-nav__close svg { width: 20px; height: 20px; }
+
+  .sv-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--sv-bg) 94%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px);
+    border-top: 1px solid var(--sv-line);
+    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+  }
+  .sv-tabbar__item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0;
+    font-size: 11px; font-weight: 600; color: var(--sv-muted); text-decoration: none;
+  }
+  .sv-tabbar__item svg { width: 22px; height: 22px; }
+  .sv-tabbar__item[aria-current='page'] { color: var(--sv-green-ink); }
+  html.sv-has-nav body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}

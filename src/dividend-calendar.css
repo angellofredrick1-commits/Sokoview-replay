@@ -409,3 +409,10 @@ body.dc-noscroll { overflow: hidden; }
 .dc-key--pay { background: var(--dc-green); }
 .dc-key--other { background: var(--dc-grey-bg); box-shadow: inset 0 0 0 1px var(--dc-line); }
 .dc-key--expected { box-shadow: inset 0 0 0 1.5px var(--dc-muted); }
+
+/* title row now that the shared nav owns the top bar */
+.dc-titlebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dc-titlebar .dc-title { margin: 0; }
+.dc-titlebar__sub { margin-left: auto; background: var(--dc-green); border-color: var(--dc-green); color: #052e14 !important; }
+.dc-titlebar__sub:hover:not(:disabled) { background: #16a34a; color: #fff !important; }
+a.dc-btn { cursor: pointer; }

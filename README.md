@@ -1,3 +1,18 @@
+# Sokoview
+
+## Site map
+
+| Address | Page | Audience |
+|---|---|---|
+| `/` | Home dashboard: market close, market board, upcoming dividends, biggest climbers since Jan 2025 | Investors |
+| `/replay` | Replay (was at `/`). Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
+| `/dividends` | Dividend calendar. Deep link: `/dividends?symbol=CRDB` | Investors |
+| `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB` | Investors |
+| `/capture`, `/report` | Capture monitor and DSE report parser | Admin only, not in the navigation |
+
+Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
+The home page reads `market_snapshot()` and `growth_since_jan_2025()` from Supabase, plus the `dividend_calendar` view.
+
 # Sokoview Replay
 
 Replays DSE price history to compare investment approaches: a one-time investment
