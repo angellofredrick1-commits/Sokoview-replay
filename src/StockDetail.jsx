@@ -7,6 +7,9 @@ import {
   RefreshCw, Loader2, AlertTriangle, Settings, Info, ChevronDown,
 } from "lucide-react";
 import { logoUrl, monogramColor, monogramText } from "./logos.js";
+import SiteNav, { replayHref, dividendsHref } from "./nav/SiteNav.jsx";
+import { loadCalendarData } from "./lib/dividendData.js";
+import { adjustedAmount, calendarDividends, formatAmount, todayISO } from "./lib/dividends.js";
 
 /* ============================================================================
    Supabase
@@ -264,13 +267,122 @@ function DrySpellStrip({ days }) {
    App
    ==========================================================================*/
 
+/* ============================================================================
+   Links to the rest of Sokoview: this stock's dividends, and a Replay of it
+   ==========================================================================*/
+
+let calendarPromise = null;
+const loadCalendarOnce = () => (calendarPromise ||= loadCalendarData().catch(() => null));
+
+function payDate(d) {
+  return d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+}
+
+function StockLinks({ symbol, kind, price }) {
+  const [cal, setCal] = useState(null);
+  useEffect(() => { loadCalendarOnce().then(setCal); }, []);
+
+  const info = useMemo(() => {
+    if (!cal) return null;
+    const today = todayISO();
+    const splits = cal.splits || [];
+    const declared = cal.dividends.filter((d) => d.symbol === symbol);
+    if (!declared.length) return { none: true };
+    const all = calendarDividends(declared, { today, splits });
+    // Payments made on the same day (e.g. NMB's ordinary + special) count as one.
+    const paid = declared.filter((d) => d.pay_date && d.pay_date <= today).sort((a, b) => (a.pay_date < b.pay_date ? 1 : -1));
+    const lastDate = paid[0]?.pay_date;
+    const last = lastDate && { pay_date: lastDate, total: paid.filter((d) => d.pay_date === lastDate).reduce((t, d) => t + adjustedAmount(d, splits), 0) };
+    const next = all.filter((d) => !d.stale && (d.pay_date || "") > today).sort((a, b) => (a.pay_date < b.pay_date ? -1 : 1))[0];
+    const yearAgo = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`;
+    const trailing = declared
+      .filter((d) => d.pay_date && d.pay_date <= today && d.pay_date > yearAgo)
+      .reduce((t, d) => t + adjustedAmount(d, splits), 0);
+    const currency = declared[0].currency || "TZS";
+    return {
+      last: last && { amount: formatAmount(last.total, currency), date: payDate(last.pay_date) },
+      next: next && {
+        date: payDate(next.pay_date),
+        expected: next.expected,
+        amount: next.expected ? formatAmount(next.based_on?.amount, currency) : formatAmount(adjustedAmount(next, splits), currency),
+      },
+      overdue: all.some((d) => d.stale),
+      yieldPct: trailing && price && currency === "TZS" ? (trailing / price) * 100 : null,
+    };
+  }, [cal, symbol, price]);
+
+  const btn = "inline-flex items-center justify-center text-[12px] font-bold px-3.5 py-2 rounded-lg whitespace-nowrap";
+
+  return (
+    <div className="border border-gray-200 rounded-2xl px-4 py-3.5 flex items-center justify-between gap-x-6 gap-y-3 flex-wrap">
+      <div className="flex gap-x-7 gap-y-2 flex-wrap text-[12px]">
+        {kind === "fund" ? (
+          <div className="text-gray-500 self-center">Unit trusts don't pay dividends; returns build up in the unit price.</div>
+        ) : !info ? (
+          <div className="text-gray-400 self-center">Loading dividends…</div>
+        ) : info.none ? (
+          <div className="text-gray-500 self-center">No dividends on record for {symbol}.</div>
+        ) : (
+          <>
+            <div>
+              <div className="text-gray-500">Last dividend</div>
+              <div className="font-extrabold text-[14px] tabular-nums">{info.last ? info.last.amount : "—"}</div>
+              {info.last && <div className="text-[11px] text-gray-500">paid {info.last.date}</div>}
+            </div>
+            <div>
+              <div className="text-gray-500">Next</div>
+              <div className="font-extrabold text-[14px]">
+                {info.next ? `${info.next.expected ? "Expected " : ""}${info.next.date}` : info.overdue ? "Overdue" : "Not announced"}
+              </div>
+              {info.next && <div className="text-[11px] text-gray-500">{info.next.expected ? `if it repeats ${info.next.amount}` : info.next.amount}</div>}
+            </div>
+            {info.yieldPct != null && (
+              <div>
+                <div className="text-gray-500">Dividend yield, last 12 months</div>
+                <div className="font-extrabold text-[14px] tabular-nums">{info.yieldPct.toFixed(1)}%</div>
+                <div className="text-[11px] text-gray-500">of today's price</div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        {kind !== "fund" && info && !info.none && (
+          <a href={dividendsHref(symbol)} className={`${btn} border border-gray-300 text-neutral-900 hover:border-neutral-900`}>
+            Dividend dates
+          </a>
+        )}
+        <a href={replayHref(symbol)} className={`${btn} bg-neutral-950 text-white hover:bg-neutral-800`}>
+          Replay {symbol}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function initialSymbol() {
+  try {
+    const q = (new URLSearchParams(window.location.search).get("symbol") || "").toUpperCase().replace(/[^A-Z0-9-]/g, "");
+    return q || "CRDB";
+  } catch { return "CRDB"; }
+}
+
 export default function StockDetail() {
   const [cfg, setCfg] = useState({ url: ENV_URL, key: ENV_KEY });
   const [draft, setDraft] = useState({ url: ENV_URL, key: ENV_KEY });
   const [showCfg, setShowCfg] = useState(!ENV_URL || !ENV_KEY);
 
   const [universe, setUniverse] = useState([]);
-  const [symbol, setSymbol] = useState("CRDB");
+  const [symbol, setSymbol] = useState(initialSymbol);
+
+  // Keep the address shareable: /stock?symbol=NMB
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("symbol", symbol);
+      window.history.replaceState(null, "", url);
+    } catch { /* ignore */ }
+  }, [symbol]);
   const [rows, setRows] = useState([]);
   const [actions, setActions] = useState([]);
   const [range, setRange] = useState("10y");
@@ -457,7 +569,9 @@ export default function StockDetail() {
   /* ---- config gate ---- */
   if (showCfg || !cfg.url || !cfg.key) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-6">
+      <div className="min-h-screen bg-white">
+        <SiteNav active="stocks" />
+        <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <div className="mb-6"><Logo /></div>
           <div className="border border-gray-200 rounded-2xl p-5">
@@ -478,6 +592,7 @@ export default function StockDetail() {
             </button>
           </div>
         </div>
+        </div>
       </div>
     );
   }
@@ -493,8 +608,10 @@ export default function StockDetail() {
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
       `}</style>
 
-      <header className="border-b border-gray-200 px-5 py-3 flex items-center justify-between gap-3 sticky top-0 bg-white/95 backdrop-blur z-20">
-        <Logo />
+      <SiteNav active="stocks" />
+      <header className="border-b border-gray-200 bg-white">
+       <div className="max-w-5xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
+        <h1 className="text-[18px] font-extrabold tracking-tight">Stocks</h1>
         <div className="flex items-center gap-2">
           <button onClick={load}
             className="flex items-center gap-1.5 border border-gray-300 text-[11px] font-bold px-3 py-2 rounded-lg hover:border-neutral-900">
@@ -506,6 +623,7 @@ export default function StockDetail() {
             <Settings className="w-3.5 h-3.5" />
           </button>
         </div>
+       </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-5 py-6 space-y-4">
@@ -518,11 +636,11 @@ export default function StockDetail() {
 
         {/* ---------- selector + range ---------- */}
         <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-3 flex-wrap min-w-0">
             <StockMark symbol={symbol} size={40} />
-            <div className="relative">
+            <div className="relative min-w-0 max-w-full">
               <select value={symbol} onChange={(e) => setSymbol(e.target.value)}
-                className="appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none">
+                className="appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none max-w-full">
                 {["equity", "etf", "fund"].map((k) => {
                   const group = universe.filter((u) => u.kind === k);
                   if (!group.length) return null;
@@ -561,6 +679,8 @@ export default function StockDetail() {
             ))}
           </div>
         </div>
+
+        <StockLinks symbol={symbol} kind={liq?.kind || "equity"} price={model?.last?.close ?? null} />
 
         {/*
           An instrument can be registered before any prices arrive — that is the

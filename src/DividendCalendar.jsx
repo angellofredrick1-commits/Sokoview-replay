@@ -6,6 +6,7 @@ import {
 } from './lib/dividends.js';
 import { isLive, loadCalendarData, readWatchlist, writeWatchlist } from './lib/dividendData.js';
 import { logoUrl, monogramColor, monogramText } from './logos.js';
+import SiteNav, { replayHref, stockHref } from './nav/SiteNav.jsx';
 import './dividend-calendar.css';
 
 const WHT = 0.05; // withholding tax on dividends from DSE-listed companies
@@ -303,7 +304,8 @@ function StockSummary({ symbol, declared, all, today, splits, inWatch, toggleWat
   if (!any) return null;
   const currency = any.currency || 'TZS';
   const paid = mine.filter((d) => d.pay_date && d.pay_date <= today).sort((a, b) => (a.pay_date < b.pay_date ? 1 : -1));
-  const last = paid[0];
+  // Same-day payments (e.g. NMB's ordinary + special) are shown as one figure.
+  const last = paid[0] && { ...paid[0], combined: paid.filter((d) => d.pay_date === paid[0].pay_date).reduce((t, d) => t + adjustedAmount(d, splits), 0) };
   const next = all
     .filter((d) => d.symbol === symbol && !d.stale && (d.pay_date || '') > today)
     .sort((a, b) => (a.pay_date < b.pay_date ? -1 : 1))[0];
@@ -332,7 +334,7 @@ function StockSummary({ symbol, declared, all, today, splits, inWatch, toggleWat
         <div>
           <dt>Last paid</dt>
           <dd>{last
-            ? <button type="button" className="dc-link dc-link--plain" onClick={() => onOpen(last)}>{formatAmount(adjustedAmount(last, splits), currency)}<small> on {fmtDate(last.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}</small></button>
+            ? <button type="button" className="dc-link dc-link--plain" onClick={() => onOpen(last)}>{formatAmount(last.combined, currency)}<small> on {fmtDate(last.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}</small></button>
             : <span className="dc-faint">Nothing on record</span>}</dd>
         </div>
         <div>
@@ -364,6 +366,8 @@ function StockSummary({ symbol, declared, all, today, splits, inWatch, toggleWat
       )}
       <div className="dc-stock__actions">
         <button type="button" className="dc-btn dc-btn--small" onClick={onSubscribe}>Subscribe to {symbol} dates</button>
+        <a className="dc-btn dc-btn--small dc-btn--ghost" href={stockHref(symbol)}>Price history</a>
+        <a className="dc-btn dc-btn--small dc-btn--ghost" href={replayHref(symbol)}>Replay {symbol}</a>
         <button type="button" className="dc-btn dc-btn--small dc-btn--ghost" aria-pressed={inWatch} onClick={() => toggleWatch(symbol)}>
           {inWatch ? 'In my stocks' : 'Add to my stocks'}
         </button>
@@ -489,6 +493,7 @@ function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
         <button type="button" className="dc-btn dc-btn--ghost" aria-pressed={inWatch} onClick={() => toggleWatch(div.symbol)}>
           {inWatch ? `Remove ${div.symbol} from my stocks` : `Add ${div.symbol} to my stocks`}
         </button>
+        <a className="dc-btn dc-btn--ghost" href={stockHref(div.symbol)}>{div.symbol} price history</a>
       </div>
       {div.source_url && <p className="dc-source">Source: <a href={div.source_url} target="_blank" rel="noreferrer">{new URL(div.source_url).hostname.replace(/^www\./, '')}</a>. Gross amounts; not investment advice.</p>}
     </Sheet>
@@ -566,6 +571,10 @@ export default function DividendCalendar() {
   const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
+    document.documentElement.classList.add('sv-dark-ok');
+    return () => document.documentElement.classList.remove('sv-dark-ok');
+  }, []);
+  useEffect(() => {
     loadCalendarData().then(setData).catch((e) => setError(e.message || String(e)));
   }, []);
   useEffect(() => { if (watchlist.length === 0 && scope === 'mine') setScope('all'); }, [watchlist, scope]);
@@ -623,16 +632,16 @@ export default function DividendCalendar() {
 
   return (
     <div className="dc">
-      <header className="dc-top">
-        <div className="dc-brand">
-          <a href="/" className="dc-logo" aria-label="Sokoview home"><span className="dc-logo__mark" aria-hidden="true" />Sokoview</a>
-          <span className={`dc-pill${data?.mode === 'live' ? ' is-live' : ''}`}>{!data ? 'Loading' : data.mode === 'live' ? 'Live' : 'Sample data'}</span>
-        </div>
-        <button type="button" className="dc-btn" onClick={() => setSubscribing(true)} disabled={!data}>Subscribe<span className="dc-wide"> in your calendar</span></button>
-      </header>
+      <SiteNav active="dividends" />
 
       <main className="dc-main">
-        <h1 className="dc-title">Dividend calendar</h1>
+        <div className="dc-titlebar">
+          <h1 className="dc-title">Dividend calendar</h1>
+          {data?.mode === 'sample' && <span className="dc-pill">Sample data</span>}
+          <button type="button" className="dc-btn dc-btn--small dc-titlebar__sub" onClick={() => setSubscribing(true)} disabled={!data}>
+            Subscribe<span className="dc-wide"> in your calendar</span>
+          </button>
+        </div>
         {data?.notice && <p className="dc-banner">{data.notice}</p>}
         {error && <p className="dc-banner dc-banner--error">Couldn't load dividends: {error}. Refresh to try again.</p>}
 

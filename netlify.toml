@@ -14,6 +14,12 @@
   to = "/capture.html"
   status = 200
 
+# Replay moved from / to /replay when / became the home dashboard.
+[[redirects]]
+  from = "/replay"
+  to = "/replay.html"
+  status = 200
+
 [[redirects]]
   from = "/stock"
   to = "/stock.html"
@@ -35,7 +41,7 @@
   to = "/.netlify/functions/dividends-ics"
   status = 200
 
-# SPA fallback for the replayer.
+# Anything else lands on the home dashboard.
 [[redirects]]
   from = "/*"
   to = "/index.html"

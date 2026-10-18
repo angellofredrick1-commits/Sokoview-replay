@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import SiteNav from "./nav/SiteNav.jsx";
 import {
   ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
@@ -785,7 +786,18 @@ function LegPanel({ leg, set, color, title, enabled, onToggle, canDisable, symbo
    6. APP
    ==========================================================================*/
 
+/** Deep links from the rest of Sokoview: /replay?symbol=CRDB&from=2025 */
+function readReplayParams() {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    const symbol = (q.get("symbol") || "").toUpperCase().replace(/[^A-Z0-9-]/g, "") || null;
+    const from = Number(q.get("from"));
+    return { symbol, from: Number.isInteger(from) && from >= 2010 && from <= 2100 ? from : null };
+  } catch { return { symbol: null, from: null }; }
+}
+
 export default function SokoviewReplay() {
+  const urlParams = useMemo(readReplayParams, []);
   /* ---- source ---- */
   const [source, setSource] = useState(SB_URL && SB_KEY ? "live" : "demo");
   const [liveData, setLiveData] = useState({});     // symbol -> bars
@@ -799,15 +811,15 @@ export default function SokoviewReplay() {
 
   /* ---- config ---- */
   const [legA, setLegA] = useState({
-    symbol: "CRDB", strategy: "lump", lumpAmount: 5000000,
+    symbol: urlParams.symbol || "CRDB", strategy: "lump", lumpAmount: 5000000,
     perPeriod: 100000, freq: "monthly", autoLump: false,
   });
   const [legB, setLegB] = useState({
-    symbol: "CRDB", strategy: "dca", lumpAmount: 5000000,
+    symbol: urlParams.symbol || "CRDB", strategy: "dca", lumpAmount: 5000000,
     perPeriod: 100000, freq: "monthly", autoLump: false,
   });
   const [bOn, setBOn] = useState(true);
-  const [startYear, setStartYear] = useState(2016);
+  const [startYear, setStartYear] = useState(urlParams.from || 2016);
   const [matchCapital, setMatchCapital] = useState(true);
   const [whole, setWhole] = useState(true);
   const [reinvest, setReinvest] = useState(true);
@@ -884,6 +896,14 @@ export default function SokoviewReplay() {
     })();
     return () => { cancelled = true; };
   }, [source]);
+
+  // A deep-linked symbol that isn't in the universe falls back to CRDB rather than an empty chart.
+  useEffect(() => {
+    const known = source === "live" ? (universe.length ? new Set(universe.map((u) => u.symbol)) : null) : new Set(Object.keys(UNIVERSE));
+    if (!known) return;
+    if (!known.has(legA.symbol)) setLegA((s) => ({ ...s, symbol: "CRDB" }));
+    if (!known.has(legB.symbol)) setLegB((s) => ({ ...s, symbol: "CRDB" }));
+  }, [source, universe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- windowed bars, aligned across both legs ---- */
   const { barsA, barsB, n } = useMemo(() => {
@@ -1174,8 +1194,13 @@ export default function SokoviewReplay() {
       `}</style>
 
       {/* ---------- header ---------- */}
-      <header className="border-b border-gray-200 px-5 py-3 flex items-center justify-between flex-wrap gap-3 sticky top-0 bg-white/95 backdrop-blur z-20">
-        <Logo />
+      <SiteNav active="replay" />
+      <header className="border-b border-gray-200 bg-white">
+       <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-[18px] font-extrabold tracking-tight leading-tight">Replay</h1>
+          <p className="text-[11.5px] text-gray-500">What a DSE investment would be worth today, played back week by week.</p>
+        </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
@@ -1196,6 +1221,7 @@ export default function SokoviewReplay() {
             </button>
           </div>
         </div>
+       </div>
       </header>
 
       {/* ---------- live panel ---------- */}

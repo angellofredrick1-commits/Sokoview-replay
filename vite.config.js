@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        replay: resolve(__dirname, "replay.html"),
         capture: resolve(__dirname, "capture.html"),
         report: resolve(__dirname, "report.html"),
         stock: resolve(__dirname, "stock.html"),
