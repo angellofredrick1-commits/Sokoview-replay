@@ -119,3 +119,14 @@
 .sv-nav__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .sv-nav__actions .sv-nav__search { margin-left: 0; }
 @media (max-width: 719px) { .sv-theme { width: 40px; height: 40px; } }
+
+/* page intro: a single small line instead of a headline */
+.sv-intro {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap;
+  margin: 0 0 16px; min-height: 32px; font-family: var(--sv-font);
+}
+.sv-intro__lead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+.sv-intro__title { margin: 0; font-size: 13.5px; line-height: 1.45; font-weight: 700; letter-spacing: 0; color: var(--sv-accent-ink); white-space: nowrap; }
+.sv-intro__text { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--sv-muted); max-width: 80ch; }
+.sv-intro__text b { color: var(--sv-ink); font-weight: 700; }
+.sv-intro__actions { display: flex; align-items: center; gap: 8px; }

@@ -6,7 +6,7 @@ import {
 } from './lib/dividends.js';
 import { isLive, loadCalendarData, readWatchlist, writeWatchlist } from './lib/dividendData.js';
 import { logoUrl, monogramColor, monogramText } from './logos.js';
-import SiteNav, { replayHref, stockHref } from './nav/SiteNav.jsx';
+import SiteNav, { PageIntro, replayHref, stockHref } from './nav/SiteNav.jsx';
 import './dividend-calendar.css';
 
 const WHT = 0.05; // withholding tax on dividends from DSE-listed companies
@@ -104,61 +104,6 @@ function Sheet({ title, onClose, children, labelledBy }) {
         {children}
       </div>
     </div>
-  );
-}
-
-// ---------- hero ----------
-function Hero({ events, today, splits, onOpen, overdue, single }) {
-  const upcoming = events.filter((e) => e.date >= today);
-  const declared = upcoming.filter((e) => !e.dividend.expected);
-  const buy = declared.find((e) => e.type === 'lastbuy');
-  const pay = declared.find((e) => e.type === 'pay');
-  const expected = upcoming.find((e) => e.dividend.expected && (e.type === 'announce' || e.type === 'pay'));
-
-  let lead; let sub; let target;
-  if (buy) {
-    const k = keyDates(buy.dividend);
-    const n = daysBetween(today, buy.date);
-    lead = <>Buy <b>{buy.dividend.symbol}</b> by {fmtDate(buy.date)} to collect {formatAmount(adjustedAmount(buy.dividend, splits), buy.dividend.currency)} a share.</>;
-    sub = `${n === 0 ? 'Today is the last day to qualify' : `${n} day${n === 1 ? '' : 's'} left to qualify`}${k.pay ? `. Paid ${fmtDate(k.pay)}.` : '.'}`;
-    target = buy;
-  } else if (pay) {
-    lead = <><b>{pay.dividend.symbol}</b> pays {formatAmount(adjustedAmount(pay.dividend, splits), pay.dividend.currency)} a share on {fmtDate(pay.date)}.</>;
-    sub = `Payment ${relDays(daysBetween(today, pay.date))}. The cut-off to qualify has passed.`;
-    target = pay;
-  } else if (expected) {
-    const d = expected.dividend;
-    const when = relDays(daysBetween(today, expected.date));
-    lead = single
-      ? <><b>{d.symbol}</b> hasn't announced its next dividend.</>
-      : <>No dividend is declared for the weeks ahead. <b>{d.symbol}</b> is likely next.</>;
-    sub = `Last time ${d.symbol} paid ${formatAmount(d.based_on?.amount, d.currency)} a share on ${fmtDate(d.based_on?.pay_date, { day: 'numeric', month: 'short', year: 'numeric' })}. If it keeps to that cycle, ${expected.type === 'announce' ? `expect an announcement ${when}` : `payment would land ${when}`}.`;
-    target = expected;
-  } else {
-    if (single && overdue.length) {
-      lead = <><b>{single}</b> is later than usual this year.</>;
-      sub = `${overdue[0].notes} Its dates appear here as soon as it's declared.`;
-    } else {
-      lead = single ? <>No upcoming dividend for <b>{single}</b>.</> : <>No dividends on the calendar yet.</>;
-      sub = 'New declarations appear here as companies announce them.';
-    }
-  }
-  return (
-    <section className="dc-hero" aria-live="polite">
-      <p className="dc-hero__lead">{lead}</p>
-      <p className="dc-hero__sub">
-        {sub}{' '}
-        {target && <button type="button" className="dc-link" onClick={() => onOpen(target.dividend)}>See all dates</button>}
-      </p>
-      {overdue.length > 0 && !single && (
-        <p className="dc-hero__overdue">
-          Usually declared by now, not announced yet:{' '}
-          {overdue.map((d, i) => (
-            <span key={d.symbol}>{i > 0 && ', '}<button type="button" className="dc-link" onClick={() => onOpen(d)}>{d.symbol}</button></span>
-          ))}
-        </p>
-      )}
-    </section>
   );
 }
 
@@ -588,7 +533,6 @@ export default function DividendCalendar() {
         : allDivs
   ), [allDivs, scope, single, watchlist]);
   const events = useMemo(() => toEvents(scoped, { splits, types, today }), [scoped, splits, types, today]);
-  const heroEvents = useMemo(() => toEvents(scoped, { splits, today }), [scoped, splits, today]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -631,17 +575,19 @@ export default function DividendCalendar() {
       <SiteNav active="dividends" />
 
       <main className="dc-main">
-        <div className="dc-titlebar">
-          <h1 className="dc-title">Dividend calendar</h1>
-          {data?.mode === 'sample' && <span className="dc-pill">Sample data</span>}
-          <button type="button" className="dc-btn dc-btn--small dc-titlebar__sub" onClick={() => setSubscribing(true)} disabled={!data}>
-            Subscribe<span className="dc-wide"> in your calendar</span>
-          </button>
-        </div>
+        <PageIntro
+          title="Dividend calendar"
+          actions={<>
+            {data?.mode === 'sample' && <span className="dc-pill">Sample data</span>}
+            <button type="button" className="dc-btn dc-btn--small dc-titlebar__sub" onClick={() => setSubscribing(true)} disabled={!data}>
+              Subscribe<span className="dc-wide"> in your calendar</span>
+            </button>
+          </>}>
+          Last day to buy, books closure and payment dates for every DSE dividend.
+        </PageIntro>
         {data?.notice && <p className="dc-banner">{data.notice}</p>}
         {error && <p className="dc-banner dc-banner--error">Couldn't load dividends: {error}. Refresh to try again.</p>}
 
-        {data && <Hero events={heroEvents} today={today} splits={splits} onOpen={setOpenDiv} overdue={scoped.filter((d) => d.stale)} single={single} />}
         {data && single && (
           <StockSummary symbol={single} declared={data.dividends} all={allDivs} today={today} splits={splits}
             inWatch={watchlist.includes(single)} toggleWatch={toggleWatch} onOpen={setOpenDiv} onSubscribe={() => setSubscribing(true)} />

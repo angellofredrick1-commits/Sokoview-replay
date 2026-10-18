@@ -135,6 +135,19 @@ function ThemeToggle() {
   );
 }
 
+/** The one line every page opens with: what the page is, in small type, plus optional actions. */
+export function PageIntro({ title, children, actions }) {
+  return (
+    <div className="sv-intro">
+      <div className="sv-intro__lead">
+        {title && <h1 className="sv-intro__title">{title}</h1>}
+        <p className="sv-intro__text">{children}</p>
+      </div>
+      {actions && <div className="sv-intro__actions">{actions}</div>}
+    </div>
+  );
+}
+
 export default function SiteNav({ active }) {
   const [searching, setSearching] = useState(false);
 

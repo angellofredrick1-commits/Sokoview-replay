@@ -7,7 +7,7 @@ import {
   RefreshCw, Loader2, AlertTriangle, Settings, Info, ChevronDown,
 } from "lucide-react";
 import { logoUrl, monogramColor, monogramText } from "./logos.js";
-import SiteNav, { replayHref, dividendsHref } from "./nav/SiteNav.jsx";
+import SiteNav, { PageIntro, replayHref, dividendsHref } from "./nav/SiteNav.jsx";
 import { loadCalendarData } from "./lib/dividendData.js";
 import { adjustedAmount, calendarDividends, formatAmount, todayISO } from "./lib/dividends.js";
 
@@ -606,24 +606,21 @@ export default function StockDetail() {
       `}</style>
 
       <SiteNav active="stocks" />
-      <header className="border-b border-line bg-page">
-       <div className="max-w-5xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
-        <h1 className="text-[15px] font-bold text-accent-ink">Stocks</h1>
-        <div className="flex items-center gap-2">
-          <button onClick={load}
-            className="flex items-center gap-1.5 border border-line-strong text-[13.5px] font-bold px-3 py-2 rounded-lg hover:border-ink">
-            {state.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Refresh
-          </button>
-          <button onClick={() => { setDraft(cfg); setShowCfg(true); }}
-            className="border border-line-strong p-2 rounded-lg hover:border-ink" aria-label="Settings">
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-        </div>
-       </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-5 py-6 space-y-4">
+      <main className="max-w-5xl mx-auto px-5 py-5 space-y-4">
+        <PageIntro
+          title="Stocks"
+          actions={<>
+            <button onClick={load} aria-label="Refresh prices" title="Refresh prices"
+              className="flex items-center justify-center w-8 h-8 border border-line rounded-lg text-muted hover:text-ink hover:border-line-strong">
+              {state.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            </button>
+            <button onClick={() => { setDraft(cfg); setShowCfg(true); }} aria-label="Data connection settings" title="Data connection settings"
+              className="flex items-center justify-center w-8 h-8 border border-line rounded-lg text-muted hover:text-ink hover:border-line-strong">
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+          </>}>
+          Price history, trading activity and dividends for every DSE stock.
+        </PageIntro>
         {state.error && (
           <div className="border border-down/40 bg-down-soft rounded-xl p-4 flex gap-2.5">
             <AlertTriangle className="w-4 h-4 text-down-ink flex-shrink-0 mt-0.5" />
