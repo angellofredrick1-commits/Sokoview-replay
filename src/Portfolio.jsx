@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LogOut, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import SiteNav, { PageIntro, SvMark, dividendsHref, stockHref } from './nav/SiteNav.jsx';
 import { loadInstruments } from './lib/marketData.js';
 import { loadCalendarData } from './lib/dividendData.js';
@@ -7,7 +7,7 @@ import { checkTrade, positions, splitFactor, summarise, WITHHOLDING } from './li
 import { fromISO, todayISO } from './lib/dividends.js';
 import {
   SetupError, configured, deleteTrade, getSession, latestPrices, listTrades, onAuthChange,
-  priceOn, saveTrade, sendSignInLink, signOut,
+  priceOn, saveTrade, sendSignInLink,
 } from './lib/portfolioData.js';
 import { ActivityCard, GrowthCard, Highlights, InsightCard, buildInsightSummary, useValueHistory } from './PortfolioAnalytics.jsx';
 import { activity, performers, returns } from './lib/portfolio.js';
@@ -27,8 +27,28 @@ function urlToday() {
   return q && /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : todayISO();
 }
 
+// ---------- where to go after signing in ----------
+// Protected pages send people here as /portfolio?next=/market. The page they wanted is kept
+// for an hour (the magic link may open in a new tab), then used once they're signed in.
+const NEXT_KEY = 'sv.next';
+const safeNext = (p) => (typeof p === 'string' && /^\/(?!\/)/.test(p) && !p.startsWith('/portfolio') ? p : null);
+function rememberNext() {
+  const next = safeNext(new URLSearchParams(window.location.search).get('next'));
+  if (!next) return null;
+  try { localStorage.setItem(NEXT_KEY, JSON.stringify({ next, at: Date.now() })); } catch { /* storage blocked */ }
+  return next;
+}
+function takeNext() {
+  try {
+    const v = JSON.parse(localStorage.getItem(NEXT_KEY));
+    localStorage.removeItem(NEXT_KEY);
+    return v && Date.now() - v.at < 3600 * 1000 ? safeNext(v.next) : null;
+  } catch { return null; }
+}
+const NEXT_LABEL = { '/market': 'the market', '/dividends': 'the dividend calendar', '/replay': 'Replay', '/stock': 'that stock' };
+
 // ---------- signed out ----------
-function SignIn() {
+function SignIn({ next }) {
   const [email, setEmail] = useState('');
   const [state, setState] = useState({ status: 'idle' });
   const submit = async (e) => {
@@ -39,8 +59,8 @@ function SignIn() {
   };
   return (
     <section className="pf-card pf-signin" aria-labelledby="pf-signin-h">
-      <h2 id="pf-signin-h">Track your DSE portfolio</h2>
-      <p>Enter your buys and sells; Sokoview works out what you hold, your gain, and the dividends coming to you. Only you can see your trades.</p>
+      <h2 id="pf-signin-h">{next ? `Sign in to see ${NEXT_LABEL[next.split('?')[0]] || 'that page'}` : 'Track your DSE portfolio'}</h2>
+      <p>{next ? 'Sokoview is free; you just need to be signed in. ' : ''}Enter your buys and sells; Sokoview works out what you hold, your gain, and the dividends coming to you. Only you can see your trades.</p>
       {state.status === 'sent' ? (
         <p className="pf-note pf-note--ok" role="status">Check your email. We sent a sign-in link to <b>{state.email}</b>. Open it on this device.</p>
       ) : (
@@ -393,6 +413,7 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
 // ---------- page ----------
 export default function Portfolio() {
   const today = useMemo(urlToday, []);
+  const next = useMemo(rememberNext, []);
   const [session, setSession] = useState(undefined); // undefined = still checking
   const [trades, setTrades] = useState(null);
   const [market, setMarket] = useState({ prices: {}, dividends: [], splits: [] });
@@ -405,6 +426,13 @@ export default function Portfolio() {
     loadInstruments().then(setInstruments);
     return onAuthChange(setSession);
   }, []);
+
+  // Signed in and arrived from a protected page: carry on to it.
+  useEffect(() => {
+    if (!session) return;
+    const to = takeNext();
+    if (to) window.location.replace(to);
+  }, [session]);
 
   useEffect(() => {
     if (!session) { setTrades(null); return; }
@@ -430,14 +458,13 @@ export default function Portfolio() {
   const signedIn = Boolean(session);
   return (
     <div className="pf">
-      <SiteNav active="portfolio" />
+      <SiteNav active="portfolio" requireAuth={false} />
       <main className="pf-main">
         <PageIntro
           title="Portfolio"
           actions={signedIn ? (
             <>
               <span className="pf-who">{session.user?.email}</span>
-              <button type="button" className="pf-icon" aria-label="Sign out" title="Sign out" onClick={() => signOut()}><LogOut aria-hidden="true" /></button>
               {trades?.length > 0 && <button type="button" className="pf-btn pf-btn--small" onClick={() => setSheet({})}><Plus aria-hidden="true" /> Add trade</button>}
             </>
           ) : null}>
@@ -448,7 +475,7 @@ export default function Portfolio() {
         {error && <p className="pf-note pf-note--bad" role="alert">{error instanceof SetupError ? error.message : `Couldn’t load your trades: ${error.message}. Refresh to try again.`}</p>}
 
         {configured && session === undefined && <div className="pf-skeleton" aria-hidden="true" />}
-        {configured && session === null && <SignIn />}
+        {configured && session === null && <SignIn next={next} />}
 
         {signedIn && trades && trades.length === 0 && !error && (
           <section className="pf-card pf-first">

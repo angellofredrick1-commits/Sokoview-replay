@@ -7,6 +7,8 @@ import {
 import { isLive, loadCalendarData, readWatchlist, writeWatchlist } from './lib/dividendData.js';
 import { logoUrl, monogramColor, monogramText } from './logos.js';
 import SiteNav, { PageIntro, replayHref, stockHref } from './nav/SiteNav.jsx';
+import { configured, listTrades } from './lib/portfolioData.js';
+import { portfolioDividends } from './lib/portfolio.js';
 import './dividend-calendar.css';
 
 const WHT = 0.05; // withholding tax on dividends from DSE-listed companies
@@ -226,13 +228,14 @@ function YearGrid({ year, events, today, onPickDay, onPickMonth }) {
 }
 
 // ---------- stock picker ----------
-function StockPicker({ value, onChange, stocks, watchlist }) {
+function StockPicker({ value, onChange, stocks, watchlist, held }) {
   return (
     <label className="dc-picker">
       <span className="dc-sr">Stock</span>
       <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {held.length > 0 && <option value="held">My holdings ({held.length} stock{held.length > 1 ? 's' : ''})</option>}
         <option value="all">All dividend payers ({stocks.length})</option>
-        {watchlist.length > 0 && <option value="mine">My stocks ({watchlist.length})</option>}
+        {watchlist.length > 0 && <option value="mine">My watchlist ({watchlist.length})</option>}
         <optgroup label="One stock">
           {stocks.map((st) => (
             <option key={st.symbol} value={st.symbol}>{st.symbol} · {st.name}</option>
@@ -321,7 +324,24 @@ function StockSummary({ symbol, declared, all, today, splits, inWatch, toggleWat
   );
 }
 
-function EventRow({ e, today, splits, onOpen }) {
+const OWN_LABEL = {
+  received: 'paid to you',
+  due: 'coming to you',
+  'if-held': 'yours if you still hold them on the last day to buy',
+  expected: 'estimate at what you hold now',
+};
+const nfShares = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+function OwnLine({ own }) {
+  if (!own) return null;
+  return (
+    <span className="dc-row__own">
+      Your {nfShares.format(own.shares)} shares: <b>{formatAmount(Math.round(own.net), own.currency)}</b> after tax, {OWN_LABEL[own.status]}
+    </span>
+  );
+}
+
+function EventRow({ e, today, splits, onOpen, own }) {
   const d = e.dividend;
   const n = daysBetween(today, e.date);
   return (
@@ -341,6 +361,7 @@ function EventRow({ e, today, splits, onOpen }) {
             {d.expected ? `expected, last time ${formatAmount(d.based_on?.amount, d.currency)}` : `${formatAmount(adjustedAmount(d, splits), d.currency)} ${d.kind}`}
             {e.date >= today && n <= 60 && `, ${relDays(n)}`}
           </span>
+          <OwnLine own={own} />
         </span>
         {!d.expected && <Badge div={d} />}
       </button>
@@ -349,7 +370,7 @@ function EventRow({ e, today, splits, onOpen }) {
   );
 }
 
-function Agenda({ events, today, splits, onOpen, showPast, setShowPast }) {
+function Agenda({ events, today, splits, onOpen, showPast, setShowPast, ownOf }) {
   const shown = showPast ? events : events.filter((e) => e.date >= today);
   const groups = [];
   for (const e of shown) {
@@ -366,7 +387,7 @@ function Agenda({ events, today, splits, onOpen, showPast, setShowPast }) {
       {groups.map((g) => (
         <section key={g.key} className="dc-agenda__month">
           <h3>{MONTHS[Number(g.key.slice(5)) - 1]} {g.key.slice(0, 4)}</h3>
-          <ul>{g.items.map((e) => <EventRow key={e.id} e={e} today={today} splits={splits} onOpen={onOpen} />)}</ul>
+          <ul>{g.items.map((e) => <EventRow key={e.id} e={e} today={today} splits={splits} onOpen={onOpen} own={ownOf(e.dividend)} />)}</ul>
         </section>
       ))}
     </div>
@@ -374,8 +395,8 @@ function Agenda({ events, today, splits, onOpen, showPast, setShowPast }) {
 }
 
 // ---------- detail ----------
-function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
-  const [shares, setShares] = useState('100');
+function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch, own }) {
+  const [shares, setShares] = useState(own ? String(Math.round(own.shares)) : '100');
   const evs = useMemo(() => toEvents([div], { splits }), [div, splits]);
   const amt = adjustedAmount(div, splits);
   const split = amt !== Number(div.amount);
@@ -406,11 +427,12 @@ function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
 
       <dl className="dc-facts">
         {yieldPct != null && (<><dt>Against today's price</dt><dd>{yieldPct.toFixed(2)}% of {formatAmount(div.price)}</dd></>)}
-        <dt><label htmlFor="dc-shares">Shares you hold</label></dt>
+        <dt><label htmlFor="dc-shares">{own ? 'Shares that count for you' : 'Shares you hold'}</label></dt>
         <dd><input id="dc-shares" inputMode="numeric" value={shares} onChange={(e) => setShares(e.target.value.replace(/[^\d]/g, ''))} /></dd>
         <dt>You'd receive</dt>
         <dd><b>{formatAmount(net, div.currency)}</b> <small>after 5% withholding tax ({formatAmount(gross, div.currency)} gross)</small></dd>
       </dl>
+      {own && <p className="dc-note">From your Portfolio trades: {OWN_LABEL[own.status]}{own.status === 'due' || own.status === 'received' ? `, on the ${nfShares.format(own.shares)} shares you held before the ex-date` : ''}.</p>}
 
       <h3 className="dc-detail__h">{div.expected ? (div.stale ? 'No dates yet' : "Expected dates, based on last year") : 'Key dates'}</h3>
       <ol className="dc-timeline">
@@ -436,7 +458,7 @@ function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
           Download upcoming dates (.ics)
         </button>
         <button type="button" className="dc-btn dc-btn--ghost" aria-pressed={inWatch} onClick={() => toggleWatch(div.symbol)}>
-          {inWatch ? `Remove ${div.symbol} from my stocks` : `Add ${div.symbol} to my stocks`}
+          {inWatch ? `Remove ${div.symbol} from my watchlist` : `Add ${div.symbol} to my watchlist`}
         </button>
         <a className="dc-btn dc-btn--ghost" href={stockHref(div.symbol)}>{div.symbol} price history</a>
       </div>
@@ -446,12 +468,12 @@ function DividendSheet({ div, today, splits, onClose, inWatch, toggleWatch }) {
 }
 
 // ---------- subscribe ----------
-function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected, symbol }) {
-  const [scope, setScope] = useState(symbol ? 'one' : watchlist.length ? 'mine' : 'all');
+function SubscribeSheet({ onClose, watchlist, held, allSymbols, includeExpected, symbol }) {
+  const [scope, setScope] = useState(symbol ? 'one' : held.length ? 'held' : watchlist.length ? 'mine' : 'all');
   const [types, setTypes] = useState(DEFAULT_FEED_TYPES);
   const [expected, setExpected] = useState(includeExpected);
   const [copied, setCopied] = useState(false);
-  const symbols = scope === 'one' && symbol ? [symbol] : scope === 'mine' ? watchlist : [];
+  const symbols = scope === 'one' && symbol ? [symbol] : scope === 'held' ? held : scope === 'mine' ? watchlist : [];
   const params = new URLSearchParams();
   if (symbols.length) params.set('symbols', symbols.join(','));
   params.set('types', types.join(','));
@@ -469,9 +491,10 @@ function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected, symbo
       <fieldset className="dc-field">
         <legend>Which stocks</legend>
         {symbol && <label><input type="radio" name="scope" checked={scope === 'one'} onChange={() => setScope('one')} /> {symbol} only</label>}
+        {held.length > 0 && <label><input type="radio" name="scope" checked={scope === 'held'} onChange={() => setScope('held')} /> My holdings ({held.join(', ')})</label>}
         <label><input type="radio" name="scope" checked={scope === 'all'} onChange={() => setScope('all')} /> All {allSymbols.length} dividend payers</label>
         <label><input type="radio" name="scope" checked={scope === 'mine'} onChange={() => setScope('mine')} disabled={!watchlist.length} />
-          My stocks{watchlist.length ? ` (${watchlist.join(', ')})` : ' (none added yet)'}</label>
+          My watchlist{watchlist.length ? ` (${watchlist.join(', ')})` : ' (none added yet)'}</label>
       </fieldset>
 
       <fieldset className="dc-field">
@@ -499,6 +522,35 @@ function SubscribeSheet({ onClose, watchlist, allSymbols, includeExpected, symbo
 }
 
 // ---------- page ----------
+// ---------- your dividends at a glance (My holdings) ----------
+function OwnSummary({ own, today, onOpen }) {
+  const yearAhead = new Date(Date.parse(today) + 365 * 86400000).toISOString().slice(0, 10);
+  const tzs = (rows) => Math.round(rows.filter((r) => r.currency === 'TZS').reduce((t, r) => t + r.net, 0));
+  const coming = own.filter((r) => r.status !== 'received' && r.payDate > today && r.payDate <= yearAhead);
+  const firm = coming.filter((r) => r.status === 'due');
+  const next = coming[0];
+  const paidThisYear = own.filter((r) => r.status === 'received' && r.payDate.startsWith(today.slice(0, 4)));
+  return (
+    <section className="dc-own" aria-label="Your dividends">
+      <div className="dc-own__stat">
+        <span>Coming to you, next 12 months</span>
+        <b>{formatAmount(tzs(coming), 'TZS')}</b>
+        <small>{firm.length ? `${formatAmount(tzs(firm), 'TZS')} already declared and yours` : 'not declared yet, so estimates'}</small>
+      </div>
+      <button type="button" className="dc-own__stat dc-own__next" disabled={!next} onClick={() => next && onOpen(next.dividend)}>
+        <span>Next payment</span>
+        <b>{next ? `${next.symbol} ${formatAmount(Math.round(next.net), next.currency)}` : 'None in the next year'}</b>
+        <small>{next ? `${fmtLong(next.payDate)}${next.status === 'due' ? '' : next.status === 'if-held' ? ', if you still hold on the last day to buy' : ', estimated'}` : ' '}</small>
+      </button>
+      <div className="dc-own__stat">
+        <span>Paid to you in {today.slice(0, 4)}</span>
+        <b>{formatAmount(tzs(paidThisYear), 'TZS')}</b>
+        <small>after 5% withholding tax</small>
+      </div>
+    </section>
+  );
+}
+
 export default function DividendCalendar() {
   const today = useMemo(urlToday, []);
   const [data, setData] = useState(null);
@@ -514,9 +566,12 @@ export default function DividendCalendar() {
   const [showPast, setShowPast] = useState(false);
   const [openDiv, setOpenDiv] = useState(null);
   const [subscribing, setSubscribing] = useState(false);
+  const [trades, setTrades] = useState(null); // the signed-in user's Portfolio trades
+  const picked = useRef(Boolean(urlSymbol()));
 
   useEffect(() => {
     loadCalendarData().then(setData).catch((e) => setError(e.message || String(e)));
+    if (configured) listTrades().then(setTrades).catch(() => setTrades([]));
   }, []);
   useEffect(() => { if (watchlist.length === 0 && scope === 'mine') setScope('all'); }, [watchlist, scope]);
 
@@ -524,14 +579,24 @@ export default function DividendCalendar() {
   const allDivs = useMemo(() => (data ? calendarDividends(data.dividends, { today, includeExpected, splits }) : []), [data, today, includeExpected, splits]);
   const allSymbols = useMemo(() => [...new Set((data?.dividends || []).map((d) => d.symbol))].sort(), [data]);
   const stocks = useMemo(() => allSymbols.map((sym) => ({ symbol: sym, name: (data.dividends.find((d) => d.symbol === sym) || {}).name || sym })), [allSymbols, data]);
-  const single = scope !== 'all' && scope !== 'mine' ? scope : null;
+  // Your dividends, from Portfolio trades: which ones count for you and how much.
+  const own = useMemo(() => (data && trades?.length ? portfolioDividends(trades, splits, data.dividends, { today }) : []), [data, trades, splits, today]);
+  const ownById = useMemo(() => new Map(own.map((r) => [dividendId(r.dividend), r])), [own]);
+  const ownOf = useCallback((d) => ownById.get(dividendId(d)) || null, [ownById]);
+  const held = useMemo(() => [...new Set(own.map((r) => r.symbol))].sort(), [own]);
+  // Open on your own dividends unless a stock was asked for or picked.
+  useEffect(() => { if (held.length && !picked.current && scope === 'all') setScope('held'); }, [held, scope]);
+  useEffect(() => { if (!held.length && scope === 'held' && trades) setScope('all'); }, [held, scope, trades]);
+
+  const single = !['all', 'mine', 'held'].includes(scope) ? scope : null;
   // An unknown ?symbol= (or a stock that has since dropped out) falls back to everything.
   useEffect(() => { if (data && single && !allSymbols.includes(single)) setScope('all'); }, [data, single, allSymbols]);
   const scoped = useMemo(() => (
-    scope === 'mine' ? allDivs.filter((d) => watchlist.includes(d.symbol))
+    scope === 'held' ? allDivs.filter((d) => ownById.has(dividendId(d)))
+      : scope === 'mine' ? allDivs.filter((d) => watchlist.includes(d.symbol))
       : single ? allDivs.filter((d) => d.symbol === single)
         : allDivs
-  ), [allDivs, scope, single, watchlist]);
+  ), [allDivs, scope, single, watchlist, ownById]);
   const events = useMemo(() => toEvents(scoped, { splits, types, today }), [scoped, splits, types, today]);
 
   useEffect(() => {
@@ -541,8 +606,9 @@ export default function DividendCalendar() {
   }, [single]);
 
   const pickScope = (value) => {
+    picked.current = true;
     setScope(value);
-    if (value === 'all' || value === 'mine' || !data) return;
+    if (value === 'all' || value === 'mine' || value === 'held' || !data) return;
     // Stay put if this stock already has dates in the period on screen;
     // otherwise move to where it has something to show.
     const evs = toEvents(allDivs.filter((d) => d.symbol === value), { splits, types, today });
@@ -588,6 +654,11 @@ export default function DividendCalendar() {
         {data?.notice && <p className="dc-banner">{data.notice}</p>}
         {error && <p className="dc-banner dc-banner--error">Couldn't load dividends: {error}. Refresh to try again.</p>}
 
+        {configured && trades && trades.length === 0 && (
+          <p className="dc-banner dc-banner--quiet">Add your trades on the <a href="/portfolio">Portfolio</a> page to see the dividends coming to you here.</p>
+        )}
+        {data && scope === 'held' && <OwnSummary own={own} today={today} onOpen={setOpenDiv} />}
+
         {data && single && (
           <StockSummary symbol={single} declared={data.dividends} all={allDivs} today={today} splits={splits}
             inWatch={watchlist.includes(single)} toggleWatch={toggleWatch} onOpen={setOpenDiv} onSubscribe={() => setSubscribing(true)} />
@@ -599,7 +670,7 @@ export default function DividendCalendar() {
             <button type="button" aria-pressed={view === 'year'} onClick={() => setView('year')}>Year</button>
             <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
           </div>
-          {data && <StockPicker value={scope} onChange={pickScope} stocks={stocks} watchlist={watchlist} />}
+          {data && <StockPicker value={scope} onChange={pickScope} stocks={stocks} watchlist={watchlist} held={held} />}
           <label className="dc-toggle">
             <input type="checkbox" checked={includeExpected} onChange={(e) => setIncludeExpected(e.target.checked)} />
             Show expected
@@ -630,7 +701,7 @@ export default function DividendCalendar() {
             <div className="dc-day-detail" aria-live="polite">
               <h3>{fmtLong(selectedDay)}</h3>
               {dayEvents.length
-                ? <ul>{dayEvents.map((e) => <EventRow key={e.id} e={e} today={today} splits={splits} onOpen={setOpenDiv} />)}</ul>
+                ? <ul>{dayEvents.map((e) => <EventRow key={e.id} e={e} today={today} splits={splits} onOpen={setOpenDiv} own={ownOf(e.dividend)} />)}</ul>
                 : <p className="dc-empty">No dividend dates on this day.</p>}
             </div>
           </section>
@@ -662,7 +733,7 @@ export default function DividendCalendar() {
         )}
 
         {data && view === 'list' && (
-          <Agenda events={events} today={today} splits={splits} onOpen={setOpenDiv} showPast={showPast} setShowPast={setShowPast} />
+          <Agenda events={events} today={today} splits={splits} onOpen={setOpenDiv} showPast={showPast} setShowPast={setShowPast} ownOf={ownOf} />
         )}
 
         <footer className="dc-foot">
@@ -672,9 +743,9 @@ export default function DividendCalendar() {
 
       {openDiv && (
         <DividendSheet div={openDiv} today={today} splits={splits} onClose={closeDiv}
-          inWatch={watchlist.includes(openDiv.symbol)} toggleWatch={toggleWatch} />
+          inWatch={watchlist.includes(openDiv.symbol)} toggleWatch={toggleWatch} own={ownOf(openDiv)} />
       )}
-      {subscribing && <SubscribeSheet onClose={closeSub} watchlist={watchlist} allSymbols={allSymbols} includeExpected={includeExpected} symbol={single} />}
+      {subscribing && <SubscribeSheet onClose={closeSub} watchlist={watchlist} held={held} allSymbols={allSymbols} includeExpected={includeExpected} symbol={single} />}
     </div>
   );
 }

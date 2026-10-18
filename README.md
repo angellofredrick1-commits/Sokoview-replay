@@ -4,15 +4,22 @@
 
 | Address | Page | Audience |
 |---|---|---|
-| `/` | About Sokoview, with a live board strip and a Sign in link to `/portfolio` (reads "Open your portfolio" when a session exists) | Everyone |
-| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends, highlights, money in vs value now, buying activity, AI insight. Needs migration 0010 and Supabase Auth (see below) | Investors |
-| `/market` | Market close and the grid of every listed share (each tile opens `/stock`), upcoming dividends, climbers since Jan 2025 (was the home page) | Investors |
-| `/dividends` | Dividend calendar. Deep link: `/dividends?symbol=CRDB` | Investors |
-| `/replay` | Replay. Deep link: `/replay?symbol=CRDB&from=2025` | Investors |
-| `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB`. No tab of its own: reached from the Market grid and search | Investors |
+| `/` | About Sokoview, with a live board strip and a Sign in link to `/portfolio` (reads "Open your portfolio" when a session exists). The only public page | Everyone |
+| `/portfolio` | Signed-in users' own buys and sells: holdings, gains, dividends, highlights, money in vs value now, buying activity, AI insight. Needs migration 0010 and Supabase Auth (see below) | Signed in |
+| `/market` | Market close and the grid of every listed share (each tile opens `/stock`), upcoming dividends, climbers since Jan 2025 (was the home page) | Signed in |
+| `/dividends` | Dividend calendar; opens on **My holdings** (your dividends and amounts, from Portfolio trades) when you have trades. Deep link: `/dividends?symbol=CRDB` | Signed in |
+| `/replay` | Replay. Deep link: `/replay?symbol=CRDB&from=2025` | Signed in |
+| `/stock` | Stock price history, liquidity and dividends. Deep link: `/stock?symbol=NMB`. No tab of its own: reached from the Market grid and search | Signed in |
 | `/capture`, `/report` | Capture monitor and DSE report parser | Admin only, not in the navigation |
 
-The tabs, in order: Portfolio, Market, Dividends, Replay. Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
+The tabs, in order: Portfolio, Market, Dividends, Replay.
+
+**Sign-in.** Everything except `/` needs a signed-in user. Each protected page checks for a stored Supabase
+session in its `<head>` and, without one, goes to `/portfolio?next=<page>`; after the emailed link signs you in
+you land back on that page. `SiteNav` also watches the session, so signing out or an expired session sends you
+to sign-in. This controls what the site shows; the market data itself stays readable with the public key (the
+landing page uses it), and the `/dividends.ics` feed stays public so calendar apps can subscribe. The gate is
+skipped when the build has no `VITE_SUPABASE_URL` (sample mode). Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
 The Market page reads `market_snapshot()` and `growth_since_jan_2025()` from Supabase, plus the `dividend_calendar` view.
 
 ## Design language
