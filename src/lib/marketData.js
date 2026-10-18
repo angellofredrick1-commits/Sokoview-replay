@@ -42,6 +42,7 @@ const FALLBACK_INSTRUMENTS = [
   ['TTP', 'Tatepa Company', 'equity'], ['USL', 'Uchumi Supermarket', 'equity'],
   ['VODA', 'Vodacom Tanzania', 'equity'], ['YETU', 'Yetu Microfinance', 'equity'],
   ['IEACLC-ETF', 'iTrust EAC Large Cap ETF', 'etf'], ['VERTEX-ETF', 'Vertex International Securities ETF', 'etf'],
+  ['ZAN-ETF', 'Zan Timiza ETF', 'etf'],
   ['BOND', 'Bond Fund', 'fund'], ['ICASH', 'iCash', 'fund'], ['IDOLLAR', 'iDollar', 'fund'],
   ['IGROWTH', 'iGrowth', 'fund'], ['IINCOME', 'iIncome', 'fund'], ['IMAAN', 'Imaan', 'fund'],
   ['ISAVE', 'iSave', 'fund'], ['JIKIMU', 'Jikimu Fund', 'fund'], ['LIQUID', 'Liquid Fund', 'fund'],
