@@ -155,7 +155,7 @@ function ReplayPanel({ growth }) {
   );
 }
 
-export default function Home() {
+export default function Market() {
   const today = useMemo(urlToday, []);
   const [market, setMarket] = useState(null);
   const [cal, setCal] = useState(null);
@@ -168,7 +168,7 @@ export default function Home() {
 
   return (
     <div className="hm">
-      <SiteNav active="home" />
+      <SiteNav active="market" />
       <main className="hm-main">
         {error && <p className="hm-banner">Couldn't load today's prices: {error}. Refresh to try again.</p>}
         {market?.mode === 'sample' && <p className="hm-banner hm-banner--quiet">Sample data. Set the Supabase variables to show live prices.</p>}

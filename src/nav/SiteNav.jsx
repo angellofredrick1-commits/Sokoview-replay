@@ -1,17 +1,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Briefcase, CalendarDays, History, Home as HomeIcon, LineChart, Moon, Search, Sun, X } from 'lucide-react';
+import { Briefcase, CalendarDays, History, LayoutGrid, Moon, Search, Sun, X } from 'lucide-react';
 import { useTheme } from '../theme/theme.js';
 import { loadInstruments } from '../lib/marketData.js';
 import { logoUrl, monogramColor, monogramText } from '../logos.js';
 import './site-nav.css';
 
 // One navigation for every investor page. Admin tools (/capture, /report) are left out on purpose.
+// Stock pages have no tab of their own: they open from the Market grid and from search.
 export const NAV_ITEMS = [
-  { key: 'home', label: 'Home', href: '/', Icon: HomeIcon },
-  { key: 'replay', label: 'Replay', href: '/replay', Icon: History },
-  { key: 'dividends', label: 'Dividends', href: '/dividends', Icon: CalendarDays },
-  { key: 'stocks', label: 'Stocks', href: '/stock', Icon: LineChart },
   { key: 'portfolio', label: 'Portfolio', href: '/portfolio', Icon: Briefcase },
+  { key: 'market', label: 'Market', href: '/market', Icon: LayoutGrid },
+  { key: 'dividends', label: 'Dividends', href: '/dividends', Icon: CalendarDays },
+  { key: 'replay', label: 'Replay', href: '/replay', Icon: History },
 ];
 
 export const stockHref = (symbol) => `/stock?symbol=${encodeURIComponent(symbol)}`;
@@ -125,7 +125,7 @@ function StockSearch({ autoFocus = false, onDone }) {
   );
 }
 
-function ThemeToggle() {
+export function ThemeToggle() {
   const [theme, setTheme] = useTheme();
   const next = theme === 'dark' ? 'light' : 'dark';
   return (
@@ -185,7 +185,7 @@ export default function SiteNav({ active }) {
         )}
       </header>
 
-      {/* Phone: the same four destinations as a bottom tab bar. */}
+      {/* Phone: the same destinations as a bottom tab bar. */}
       <nav className="sv-tabbar" aria-label="Main">
         {NAV_ITEMS.map(({ key, label, href, Icon }) => (
           <a key={key} href={href} className="sv-tabbar__item" aria-current={active === key ? 'page' : undefined}>

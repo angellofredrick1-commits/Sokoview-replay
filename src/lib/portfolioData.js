@@ -9,6 +9,10 @@ export class SetupError extends Error {}
 
 function check(error) {
   if (!error) return;
+  // Benchmark functions missing: migration 0011 hasn't been run yet.
+  if (/index_at|index_monthly|monthly_closes|market_index/.test(error.message || '')) {
+    throw new SetupError('The DSE benchmark isn\'t set up yet: run supabase/migrations/0011_market_benchmark.sql.');
+  }
   // Table or function missing: migration 0010 hasn't been run yet.
   if (['42P01', 'PGRST205', 'PGRST202', '42883'].includes(error.code) || /portfolio_txn|price_on/.test(error.message || '')) {
     throw new SetupError('Portfolio storage isn\'t set up yet: run supabase/migrations/0010_portfolio.sql.');
@@ -85,4 +89,52 @@ export async function latestPrices(symbols) {
     try { return [s, await priceOn(s, today)]; } catch { return [s, null]; }
   }));
   return Object.fromEntries(entries.filter(([, v]) => v));
+}
+
+// ---------- benchmark (migration 0011) ----------
+export async function indexAt(dates) {
+  const uniq = [...new Set(dates)];
+  if (!uniq.length) return {};
+  const { data, error } = await supabase.rpc('index_at', { p_dates: uniq });
+  check(error);
+  return Object.fromEntries((data || []).map((r) => [r.asked, Number(r.level)]));
+}
+
+export async function indexMonthly(from) {
+  const { data, error } = await supabase.rpc('index_monthly', { p_from: from });
+  check(error);
+  return (data || []).map((r) => ({ date: r.trade_date, level: Number(r.level) }));
+}
+
+export async function monthlyCloses(symbols, from) {
+  if (!symbols.length) return {};
+  const { data, error } = await supabase.rpc('monthly_closes', { p_symbols: symbols, p_from: from });
+  check(error);
+  const out = {};
+  for (const r of data || []) (out[r.symbol] ||= {})[r.trade_date.slice(0, 7)] = Number(r.close);
+  return out;
+}
+
+// ---------- AI insight ----------
+const INSIGHT_TTL = 24 * 3600 * 1000;
+
+function hash(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+/** Two or three AI-written observations; cached per summary for a day in this browser. */
+export async function portfolioInsight(summary) {
+  const body = JSON.stringify(summary);
+  const key = `sv.pfinsight.${hash(body)}`;
+  try {
+    const hit = JSON.parse(localStorage.getItem(key));
+    if (hit && Date.now() - hit.at < INSIGHT_TTL) return hit.insights;
+  } catch { /* no cache */ }
+  const res = await fetch('/api/portfolio-insight', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Insight unavailable (${res.status})`);
+  try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), insights: data.insights })); } catch { /* full */ }
+  return data.insights || [];
 }

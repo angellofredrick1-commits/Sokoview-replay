@@ -76,3 +76,40 @@ assert.ok(s.totals.dividendsReceived > 0 && s.totals.dividendsNext12m > 0);
 assert.equal(s.problems.length, 0);
 console.log('summary ok:', JSON.stringify({ value: Math.round(s.totals.value), unrealised: Math.round(s.totals.unrealised), realised: Math.round(s.totals.realised), received: Math.round(s.totals.dividendsReceived), next12m: Math.round(s.totals.dividendsNext12m) }));
 console.log('all portfolio tests passed');
+
+// ---------------- analytics ----------------
+const { performers, activity, xirr, vsBenchmark, valueHistory, monthsBetween } = await import('../src/lib/portfolio.js');
+
+// XIRR: 100 in, 110 out a year later = 10%
+near(xirr([{ date: '2024-01-01', amount: -100 }, { date: '2024-12-31', amount: 110 }]), 10.03, 0.1);
+assert.equal(xirr([{ date: '2024-01-01', amount: -100 }, { date: '2024-01-20', amount: 110 }]), null); // too short to annualise
+console.log('xirr ok');
+
+assert.deepEqual(monthsBetween('2025-11-15', '2026-02-01'), ['2025-11', '2025-12', '2026-01', '2026-02']);
+
+const act = activity(crdb);
+assert.equal(act.trades, 3); assert.equal(act.buys, 2); assert.equal(act.sells, 1);
+near(act.bought, 1000 * 520 + 9000 + 500 * 670 + 5700);
+assert.equal(act.mostBought.symbol, 'CRDB');
+assert.equal(act.series.length, 3);
+console.log('activity ok');
+
+const perf = performers(s.holdings);
+assert.equal(perf.best.symbol, 'CRDB'); assert.equal(perf.worst.symbol, 'NMB'); // avg 579.8 -> 2,830 vs avg 1,766.7 -> 1,990
+console.log('performers:', perf.best.symbol, perf.best.unrealisedPct.toFixed(1) + '%', '| contributor', perf.contributor.symbol);
+
+// Benchmark: if the index doubles while you hold, same money in the index doubles.
+const one = [{ id: 1, symbol: 'CRDB', side: 'buy', trade_date: '2024-01-02', shares: 100, price: 500, fees: 0 }];
+const vb = vsBenchmark(one, { value: 100 * 1500, today: '2026-01-02', indexAt: { '2024-01-02': 1000 }, indexNow: { date: '2026-01-02', level: 2000 } });
+near(vb.benchValue, 100000); near(vb.gainYou, 100000); near(vb.gainIdx, 50000); near(vb.edge, 50000);
+near(vb.annualYou, 73.2, 0.3); near(vb.annualIdx, 41.4, 0.3);
+// A sale takes the same shillings out of both.
+const two = [...one, { id: 2, symbol: 'CRDB', side: 'sell', trade_date: '2025-01-02', shares: 50, price: 1000, fees: 0 }];
+const vb2 = vsBenchmark(two, { value: 50 * 1500, today: '2026-01-02', indexAt: { '2024-01-02': 1000, '2025-01-02': 1250 }, indexNow: { date: '2026-01-02', level: 2000 } });
+near(vb2.benchValue, (50 - 50000 / 1250) * 2000); // 50 units - 40 units = 10 units * 2000
+console.log('benchmark ok: edge', Math.round(vb.edge), '| annual you', vb.annualYou.toFixed(1) + '%', 'index', vb.annualIdx.toFixed(1) + '%');
+
+const vh = valueHistory(one, { closes: { CRDB: { '2024-01': 520, '2024-02': 600 } }, indexMonthly: { '2024-01': 1000, '2024-02': 1100 }, indexAt: { '2024-01-02': 1000 }, today: '2024-02-20' });
+assert.equal(vh.length, 2); assert.equal(vh[1].portfolio, 60000); assert.equal(vh[1].benchmark, 55000); assert.equal(vh[1].invested, 50000);
+console.log('value history ok');
+console.log('all analytics tests passed');

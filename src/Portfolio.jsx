@@ -9,6 +9,8 @@ import {
   SetupError, configured, deleteTrade, getSession, latestPrices, listTrades, onAuthChange,
   priceOn, saveTrade, sendSignInLink, signOut,
 } from './lib/portfolioData.js';
+import { ActivityCard, BenchmarkCard, Highlights, InsightCard, buildInsightSummary, useBenchmark } from './PortfolioAnalytics.jsx';
+import { activity, performers } from './lib/portfolio.js';
 import './portfolio.css';
 
 const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
@@ -240,7 +242,7 @@ function DividendRows({ rows, today }) {
   );
 }
 
-function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, today, onAdd, onEdit }) {
+function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, today, dataReady, onAdd, onEdit }) {
   const s = useMemo(() => summarise(trades, { splits, prices, dividends, today }), [trades, splits, prices, dividends, today]);
   const [showReceived, setShowReceived] = useState(false);
   const [confirming, setConfirming] = useState(null);
@@ -251,6 +253,11 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
   const upcoming = s.dividends.filter((r) => r.status !== 'received');
   const received = s.dividends.filter((r) => r.status === 'received').reverse();
   const t = s.totals;
+  const perf = useMemo(() => performers(s.holdings), [s.holdings]);
+  const act = useMemo(() => activity(trades), [trades]);
+  const bench = useBenchmark(trades, { splits, today, value: t.value, dividendRows: s.dividends, dividendsReceived: t.dividendsReceived });
+  const benchSettled = bench.status !== 'loading';
+  const insightSummary = useMemo(() => buildInsightSummary({ today, s, perf, act, bench, names }), [today, s, perf, act, bench, names]);
 
   const remove = async (trade) => {
     setErr(null);
@@ -282,6 +289,16 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
         </p>
       )}
       {err && <p className="pf-note pf-note--bad" role="alert">{err}</p>}
+
+      {trades.length > 0 && (
+        <>
+          <Highlights perf={perf} names={names} />
+          <div className="pf-ana-grid">
+            <BenchmarkCard bench={bench} />
+            <InsightCard summary={insightSummary} ready={dataReady && benchSettled && s.holdings.some((h) => h.value != null)} />
+          </div>
+        </>
+      )}
 
       <section className="pf-section" aria-labelledby="pf-h-hold">
         <div className="pf-section__head"><h2 id="pf-h-hold">Holdings</h2></div>
@@ -338,6 +355,8 @@ function Dashboard({ trades, setTrades, splits, prices, dividends, instruments, 
         {showReceived && received.length > 0 && <><h3 className="pf-h3">Paid to you</h3><DividendRows rows={received} today={today} /></>}
       </section>
 
+      <ActivityCard act={act} today={today} />
+
       <section className="pf-section" aria-labelledby="pf-h-trades">
         <div className="pf-section__head">
           <h2 id="pf-h-trades">Trades</h2>
@@ -390,13 +409,13 @@ export default function Portfolio() {
   useEffect(() => {
     if (!session) { setTrades(null); return; }
     listTrades().then(setTrades).catch((e) => setError(e));
-    loadCalendarData().then((c) => setMarket((m) => ({ ...m, dividends: c.dividends, splits: c.splits || [] }))).catch(() => {});
+    loadCalendarData().then((c) => setMarket((m) => ({ ...m, dividends: c.dividends, splits: c.splits || [], calLoaded: true }))).catch(() => setMarket((m) => ({ ...m, calLoaded: true })));
   }, [session]);
 
   const symbols = useMemo(() => [...new Set((trades || []).map((t) => t.symbol))].sort().join(','), [trades]);
   useEffect(() => {
     if (!symbols) return;
-    latestPrices(symbols.split(',')).then((prices) => setMarket((m) => ({ ...m, prices })));
+    latestPrices(symbols.split(',')).then((prices) => setMarket((m) => ({ ...m, prices, pricedFor: symbols })));
   }, [symbols]);
 
   const onSaved = useCallback((saved) => {
@@ -442,6 +461,7 @@ export default function Portfolio() {
         {signedIn && trades && trades.length > 0 && (
           <Dashboard trades={trades} setTrades={setTrades} splits={market.splits} prices={market.prices}
             dividends={market.dividends} instruments={instruments} today={today}
+            dataReady={market.pricedFor === symbols && Boolean(market.calLoaded)}
             onAdd={() => setSheet({})} onEdit={(t) => setSheet(t)} />
         )}
 

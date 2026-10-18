@@ -570,7 +570,7 @@ export default function StockDetail() {
   if (showCfg || !cfg.url || !cfg.key) {
     return (
       <div className="min-h-screen bg-page">
-        <SiteNav active="stocks" />
+        <SiteNav active="market" />
         <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <div className="border border-line rounded-2xl p-5">
@@ -605,7 +605,7 @@ export default function StockDetail() {
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
       `}</style>
 
-      <SiteNav active="stocks" />
+      <SiteNav active="market" />
       <main className="max-w-5xl mx-auto px-5 py-5 space-y-4">
         <PageIntro
           title="Stocks"
