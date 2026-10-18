@@ -154,15 +154,58 @@ function parseRankedPrices(text) {
 }
 
 /**
+ * The TOP GAINERS / TOP LOSER / TOP MOVER boxes of the ranked layout are the
+ * only place it states a closing price ("Price"). They run Company, Volume,
+ * Price[, Change%], interleaved line by line with the ranked list, so a row is
+ * only accepted when it can't be a ranked row and checks out:
+ *   - the name line is not preceded by a rank number;
+ *   - it has a Change% line (gainers, losers), or its volume equals the ranked
+ *     row's volume for the same stock (top movers, which have no Change%).
+ * A security can appear here and nowhere else: a newly listed ETF that only
+ * made the losers box (ZAN-ETF on 16 Oct 2026).
+ */
+const PCT_LINE = /^[+\-\u2212\u2013]?\d{1,3}\.\d{1,2}$/;
+const NUM_LINE = /^\d[\d,]*(?:\.\d+)?$/;
+
+function parseMovers(text, ranked) {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l !== "");
+  const byRank = new Map(ranked.map((r) => [r.symbol, r]));
+  const out = [];
+  for (let i = 1; i < lines.length - 2; i++) {
+    const sym = SYMBOLS[lines[i].toUpperCase()];
+    if (!sym || /^\d{1,2}$/.test(lines[i - 1])) continue;
+    const [v, p, c] = [lines[i + 1], lines[i + 2], lines[i + 3] || ""];
+    if (!NUM_LINE.test(v) || !NUM_LINE.test(p)) continue;
+    const volume = num(v), close = num(p);
+    const pct = PCT_LINE.test(c) ? Number(c.replace(/[\u2212\u2013]/, "-")) : null;
+    const r = byRank.get(sym);
+    if (pct == null && !(r && r.volume === volume)) continue;
+    if (r && r.low != null && r.high != null && (close < r.low || close > r.high)) continue;
+    if (out.some((x) => x.symbol === sym)) continue;
+    out.push({ symbol: sym, close, volume, pct });
+  }
+  return out;
+}
+
+/**
  * Both shapes of the report are read and then merged. The column tables win
  * wherever they overlap, because they carry the closing price; the ranked
- * layout only ever supplied a range and a volume.
+ * layout supplies a range and a volume, plus a close for whatever made the
+ * gainers, losers or movers boxes.
  */
 function parsePrices(text) {
   const cols = parseColumnTables(text);
   const ranked = parseRankedPrices(text);
+  const movers = parseMovers(text, ranked);
   const have = new Set(cols.map((r) => r.symbol));
-  return [...cols, ...ranked.filter((r) => !have.has(r.symbol))];
+  const rows = [...cols, ...ranked.filter((r) => !have.has(r.symbol)).map((r) => ({ ...r }))];
+  for (const m of movers) {
+    const row = rows.find((r) => r.symbol === m.symbol);
+    if (row) { if (row.close == null) row.close = m.close; continue; }
+    rows.push({ symbol: m.symbol, name: m.symbol, kind: /-ETF$/.test(m.symbol) ? "etf" : "equity",
+                open: null, close: m.close, low: null, high: null, volume: m.volume });
+  }
+  return rows;
 }
 
 function parseDividends(text) {
@@ -527,7 +570,7 @@ export default function ReportParser() {
     const head = "symbol,trade_date,source,open,close,low,high,volume,traded";
     const body = parsed.rows.map((r) =>
       `${r.symbol},${parsed.date},dse_report,${r.open ?? ""},${r.close ?? ""},` +
-      `${r.low},${r.high},${r.volume},${r.volume > 0}`);
+      `${r.low ?? ""},${r.high ?? ""},${r.volume},${r.volume > 0}`);
     return [head, ...body].join("\n");
   }, [parsed]);
 
@@ -579,14 +622,14 @@ export default function ReportParser() {
       `insert into price_raw (symbol, trade_date, source, open, close, low, high, volume, traded) values`,
       parsed.rows.map((r) =>
         `  ('${r.symbol}', '${parsed.date}', 'dse_report', ${r.open ?? "null"}, ` +
-        `${r.close ?? "null"}, ${r.low}, ${r.high}, ${r.volume}, ${r.volume > 0})`
+        `${r.close ?? "null"}, ${r.low ?? "null"}, ${r.high ?? "null"}, ${r.volume}, ${r.volume > 0})`
       ).join(",\n"),
       `on conflict (symbol, trade_date, source) do update set`,
       // A re-paste of an older, closeless copy of the same report must not
       // erase a close already recorded for that day.
       `  open  = coalesce(excluded.open,  price_raw.open),`,
       `  close = coalesce(excluded.close, price_raw.close),`,
-      `  low = excluded.low, high = excluded.high,`,
+      `  low = coalesce(excluded.low, price_raw.low), high = coalesce(excluded.high, price_raw.high),`,
       `  volume = excluded.volume, traded = excluded.traded;`,
     ];
     parsed.divs.forEach((d) => {
