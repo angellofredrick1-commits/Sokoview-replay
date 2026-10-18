@@ -184,10 +184,8 @@ export default function Home() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    document.documentElement.classList.add('sv-dark-ok');
     loadMarket().then(setMarket).catch((e) => setError(e.message || String(e)));
     loadCalendarData().then(setCal).catch(() => setCal({ dividends: [], splits: [] }));
-    return () => document.documentElement.classList.remove('sv-dark-ok');
   }, []);
 
   return (

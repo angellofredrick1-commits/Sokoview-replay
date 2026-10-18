@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { CalendarDays, History, Home as HomeIcon, LineChart, Search, X } from 'lucide-react';
+import { CalendarDays, History, Home as HomeIcon, LineChart, Moon, Search, Sun, X } from 'lucide-react';
+import { useTheme } from '../theme/theme.js';
 import { loadInstruments } from '../lib/marketData.js';
 import { logoUrl, monogramColor, monogramText } from '../logos.js';
 import './site-nav.css';
@@ -123,6 +124,17 @@ function StockSearch({ autoFocus = false, onDone }) {
   );
 }
 
+function ThemeToggle() {
+  const [theme, setTheme] = useTheme();
+  const next = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button type="button" className="sv-theme" onClick={() => setTheme(next)}
+      aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}>
+      {theme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+    </button>
+  );
+}
+
 export default function SiteNav({ active }) {
   const [searching, setSearching] = useState(false);
 
@@ -141,10 +153,13 @@ export default function SiteNav({ active }) {
               <a key={key} href={href} className="sv-nav__tab" aria-current={active === key ? 'page' : undefined}>{label}</a>
             ))}
           </nav>
-          <div className="sv-nav__search"><StockSearch /></div>
-          <button type="button" className="sv-nav__searchbtn" aria-label="Search stocks" onClick={() => setSearching(true)}>
-            <Search aria-hidden="true" />
-          </button>
+          <div className="sv-nav__actions">
+            <div className="sv-nav__search"><StockSearch /></div>
+            <button type="button" className="sv-nav__searchbtn" aria-label="Search stocks" onClick={() => setSearching(true)}>
+              <Search aria-hidden="true" />
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
         {searching && (
           <div className="sv-nav__overlay">

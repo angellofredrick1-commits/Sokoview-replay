@@ -79,7 +79,7 @@ const SOURCE_META = {
   utt_amis:        { label: "Manager",     color: "#a78bfa", rank: 5 },
   itrust:          { label: "Manager",     color: "#a78bfa", rank: 6 },
 };
-const srcColor = (s) => SOURCE_META[s]?.color ?? "#e5e7eb";
+const srcColor = (s) => SOURCE_META[s]?.color ?? "var(--sv-line)";
 const srcRank = (s) => SOURCE_META[s]?.rank ?? 9;
 
 const KIND_LABEL = { equity: "Equities", etf: "ETFs", fund: "Unit trusts" };
@@ -108,7 +108,7 @@ function StockMark({ symbol, size = 20, ring = false }) {
         className="inline-flex items-center justify-center rounded-full flex-shrink-0 font-extrabold text-white"
         style={{ ...px, background: monogramColor(symbol),
                  fontSize: Math.max(7, size * 0.34), letterSpacing: "-0.02em",
-                 boxShadow: ring ? "0 0 0 2px #fff" : undefined }}
+                 boxShadow: ring ? "0 0 0 2px var(--sv-page)" : undefined }}
         aria-label={symbol}
       >
         {monogramText(symbol)}
@@ -117,21 +117,21 @@ function StockMark({ symbol, size = 20, ring = false }) {
   }
   return (
     <img src={url} alt={symbol} onError={() => setFailed(true)} loading="lazy"
-      className="rounded-full object-contain bg-white flex-shrink-0"
-      style={{ ...px, boxShadow: ring ? "0 0 0 2px #fff, 0 1px 4px rgba(0,0,0,.2)" : undefined }} />
+      className="rounded-full object-contain bg-page flex-shrink-0"
+      style={{ ...px, boxShadow: ring ? "0 0 0 2px var(--sv-page), 0 1px 4px rgba(0,0,0,.2)" : undefined }} />
   );
 }
 
 function Logo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="w-7 h-7 bg-neutral-950 rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
-        <div className="w-[3.5px] h-[5px] rounded-sm bg-green-500" />
-        <div className="w-[3.5px] h-[8px] rounded-sm bg-green-500" />
-        <div className="w-[3.5px] h-[11px] rounded-sm bg-green-500" />
+      <div className="w-7 h-7 bg-inverse rounded-md flex items-end gap-[2.5px] px-1.5 pb-[5px] pt-1">
+        <div className="w-[3.5px] h-[5px] rounded-sm bg-accent" />
+        <div className="w-[3.5px] h-[8px] rounded-sm bg-accent" />
+        <div className="w-[3.5px] h-[11px] rounded-sm bg-accent" />
       </div>
-      <span className="text-[15px] font-extrabold tracking-tight text-neutral-950">sokoview</span>
-      <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-green-600 bg-green-500/10 border border-green-500/25 px-2 py-[3px] rounded-full">
+      <span className="text-[15px] font-extrabold tracking-tight text-ink">sokoview</span>
+      <span className="text-[13px] font-bold text-accent-ink bg-accent-soft border border-accent/25 px-2 py-[3px] rounded-full">
         stock
       </span>
     </div>
@@ -139,26 +139,26 @@ function Logo() {
 }
 
 function Stat({ label, value, sub, tone = "default" }) {
-  const c = { default: "text-neutral-950", warn: "text-amber-600",
-              good: "text-green-600", bad: "text-red-600" }[tone];
+  const c = { default: "text-ink", warn: "text-warn-ink",
+              good: "text-accent-ink", bad: "text-down-ink" }[tone];
   return (
-    <div className="bg-gray-50 rounded-xl px-3.5 py-3">
-      <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-gray-400 mb-1">
+    <div className="bg-surface rounded-xl px-3.5 py-3">
+      <div className="text-[12.5px] font-bold text-faint mb-1">
         {label}
       </div>
       <div className={`text-[19px] font-extrabold leading-none tabular-nums ${c}`}>{value}</div>
-      {sub && <div className="text-[10px] text-gray-500 mt-1 leading-snug">{sub}</div>}
+      {sub && <div className="text-[13px] text-muted mt-1 leading-snug">{sub}</div>}
     </div>
   );
 }
 
 function Panel({ title, hint, right, children }) {
   return (
-    <section className="border border-gray-200 rounded-2xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-start justify-between gap-3">
+    <section className="border border-line rounded-2xl overflow-hidden">
+      <div className="px-4 py-3 border-b border-line flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[12.5px] font-extrabold text-neutral-950">{title}</h2>
-          {hint && <p className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">{hint}</p>}
+          <h2 className="text-[13.5px] font-extrabold text-ink">{title}</h2>
+          {hint && <p className="text-[13px] text-muted mt-0.5 leading-snug">{hint}</p>}
         </div>
         {right}
       </div>
@@ -189,7 +189,7 @@ function ProvenanceStrip({ days }) {
           />
         ))}
       </div>
-      <div className="flex gap-3.5 flex-wrap mt-2.5 text-[10px] text-gray-500 font-semibold">
+      <div className="flex gap-3.5 flex-wrap mt-2.5 text-[13px] text-muted font-semibold">
         {Object.entries(SOURCE_META).map(([k, m]) => {
           const n = days.filter((d) => d.source === k).length;
           if (!n) return null;
@@ -225,8 +225,8 @@ function DrySpellStrip({ days }) {
   if (!withVol) {
     return (
       <div className="px-4 py-6 text-center">
-        <div className="text-[11.5px] font-bold text-gray-500">No volume in this range</div>
-        <div className="text-[10.5px] text-gray-400 mt-1">
+        <div className="text-[13.5px] font-bold text-muted">No volume in this range</div>
+        <div className="text-[13px] text-faint mt-1">
           Volume comes from the vendor feed and the exchange reports.
         </div>
       </div>
@@ -238,7 +238,7 @@ function DrySpellStrip({ days }) {
   return (
     <div className="px-4 py-3">
       <div className="relative h-8">
-        <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-gray-200" />
+        <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-line" />
         {spells.map((s, i) => {
           const intensity = s.n >= 20 ? "#d85a30" : s.n >= 5 ? "#f0997b" : "#f5c4b3";
           return (
@@ -255,7 +255,7 @@ function DrySpellStrip({ days }) {
           );
         })}
       </div>
-      <div className="flex justify-between text-[10px] text-gray-500 font-semibold mt-1.5">
+      <div className="flex justify-between text-[13px] text-muted font-semibold mt-1.5">
         <span>{spells.length} dry spell{spells.length === 1 ? "" : "s"}</span>
         <span>longest {longest} day{longest === 1 ? "" : "s"}</span>
       </div>
@@ -311,36 +311,36 @@ function StockLinks({ symbol, kind, price }) {
     };
   }, [cal, symbol, price]);
 
-  const btn = "inline-flex items-center justify-center text-[12px] font-bold px-3.5 py-2 rounded-lg whitespace-nowrap";
+  const btn = "inline-flex items-center justify-center text-[13px] font-bold px-3.5 py-2 rounded-lg whitespace-nowrap";
 
   return (
-    <div className="border border-gray-200 rounded-2xl px-4 py-3.5 flex items-center justify-between gap-x-6 gap-y-3 flex-wrap">
-      <div className="flex gap-x-7 gap-y-2 flex-wrap text-[12px]">
+    <div className="border border-line rounded-2xl px-4 py-3.5 flex items-center justify-between gap-x-6 gap-y-3 flex-wrap">
+      <div className="flex gap-x-7 gap-y-2 flex-wrap text-[13px]">
         {kind === "fund" ? (
-          <div className="text-gray-500 self-center">Unit trusts don't pay dividends; returns build up in the unit price.</div>
+          <div className="text-muted self-center">Unit trusts don't pay dividends; returns build up in the unit price.</div>
         ) : !info ? (
-          <div className="text-gray-400 self-center">Loading dividends…</div>
+          <div className="text-faint self-center">Loading dividends…</div>
         ) : info.none ? (
-          <div className="text-gray-500 self-center">No dividends on record for {symbol}.</div>
+          <div className="text-muted self-center">No dividends on record for {symbol}.</div>
         ) : (
           <>
             <div>
-              <div className="text-gray-500">Last dividend</div>
+              <div className="text-muted">Last dividend</div>
               <div className="font-extrabold text-[14px] tabular-nums">{info.last ? info.last.amount : "—"}</div>
-              {info.last && <div className="text-[11px] text-gray-500">paid {info.last.date}</div>}
+              {info.last && <div className="text-[13.5px] text-muted">paid {info.last.date}</div>}
             </div>
             <div>
-              <div className="text-gray-500">Next</div>
+              <div className="text-muted">Next</div>
               <div className="font-extrabold text-[14px]">
                 {info.next ? `${info.next.expected ? "Expected " : ""}${info.next.date}` : info.overdue ? "Overdue" : "Not announced"}
               </div>
-              {info.next && <div className="text-[11px] text-gray-500">{info.next.expected ? `if it repeats ${info.next.amount}` : info.next.amount}</div>}
+              {info.next && <div className="text-[13.5px] text-muted">{info.next.expected ? `if it repeats ${info.next.amount}` : info.next.amount}</div>}
             </div>
             {info.yieldPct != null && (
               <div>
-                <div className="text-gray-500">Dividend yield, last 12 months</div>
+                <div className="text-muted">Dividend yield, last 12 months</div>
                 <div className="font-extrabold text-[14px] tabular-nums">{info.yieldPct.toFixed(1)}%</div>
-                <div className="text-[11px] text-gray-500">of today's price</div>
+                <div className="text-[13.5px] text-muted">of today's price</div>
               </div>
             )}
           </>
@@ -348,11 +348,11 @@ function StockLinks({ symbol, kind, price }) {
       </div>
       <div className="flex gap-2 flex-wrap">
         {kind !== "fund" && info && !info.none && (
-          <a href={dividendsHref(symbol)} className={`${btn} border border-gray-300 text-neutral-900 hover:border-neutral-900`}>
+          <a href={dividendsHref(symbol)} className={`${btn} border border-line-strong text-ink hover:border-ink`}>
             Dividend dates
           </a>
         )}
-        <a href={replayHref(symbol)} className={`${btn} bg-neutral-950 text-white hover:bg-neutral-800`}>
+        <a href={replayHref(symbol)} className={`${btn} bg-inverse text-on-inverse hover:bg-inverse/85`}>
           Replay {symbol}
         </a>
       </div>
@@ -569,25 +569,24 @@ export default function StockDetail() {
   /* ---- config gate ---- */
   if (showCfg || !cfg.url || !cfg.key) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-page">
         <SiteNav active="stocks" />
         <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
-          <div className="mb-6"><Logo /></div>
-          <div className="border border-gray-200 rounded-2xl p-5">
+          <div className="border border-line rounded-2xl p-5">
             <h1 className="text-[16px] font-extrabold mb-1">Connect to Supabase</h1>
-            <p className="text-[11.5px] text-gray-500 mb-4 leading-relaxed">
+            <p className="text-[13.5px] text-muted mb-4 leading-relaxed">
               Use the publishable key. It is read-only under your row-level security policies.
             </p>
             <input value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })}
               placeholder="https://xxxx.supabase.co"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-semibold outline-none focus:border-green-500 mb-3" />
+              className="w-full border border-line-strong rounded-lg px-3 py-2 text-[13px] font-semibold outline-none focus:border-accent mb-3" />
             <input value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value })}
               placeholder="sb_publishable_…"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-semibold outline-none focus:border-green-500 mb-4" />
+              className="w-full border border-line-strong rounded-lg px-3 py-2 text-[13px] font-semibold outline-none focus:border-accent mb-4" />
             <button onClick={() => { setCfg(draft); setShowCfg(false); }}
               disabled={!draft.url || !draft.key}
-              className="w-full bg-neutral-950 text-white text-[12px] font-bold py-2.5 rounded-lg hover:bg-neutral-800 disabled:opacity-30">
+              className="w-full bg-inverse text-on-inverse text-[13px] font-bold py-2.5 rounded-lg hover:bg-inverse/85 disabled:opacity-30">
               Connect
             </button>
           </div>
@@ -600,26 +599,24 @@ export default function StockDetail() {
   const liq = universe.find((u) => u.symbol === symbol);
 
   return (
-    <div className="min-h-screen bg-white text-neutral-950 antialiased">
+    <div className="min-h-screen bg-page text-ink antialiased">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
-        * { font-family: 'Sora', ui-sans-serif, system-ui, sans-serif; }
         .tabular-nums { font-variant-numeric: tabular-nums; }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
       `}</style>
 
       <SiteNav active="stocks" />
-      <header className="border-b border-gray-200 bg-white">
+      <header className="border-b border-line bg-page">
        <div className="max-w-5xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
-        <h1 className="text-[18px] font-extrabold tracking-tight">Stocks</h1>
+        <h1 className="text-[15px] font-bold text-accent-ink">Stocks</h1>
         <div className="flex items-center gap-2">
           <button onClick={load}
-            className="flex items-center gap-1.5 border border-gray-300 text-[11px] font-bold px-3 py-2 rounded-lg hover:border-neutral-900">
+            className="flex items-center gap-1.5 border border-line-strong text-[13.5px] font-bold px-3 py-2 rounded-lg hover:border-ink">
             {state.loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
           </button>
           <button onClick={() => { setDraft(cfg); setShowCfg(true); }}
-            className="border border-gray-300 p-2 rounded-lg hover:border-neutral-900" aria-label="Settings">
+            className="border border-line-strong p-2 rounded-lg hover:border-ink" aria-label="Settings">
             <Settings className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -628,9 +625,9 @@ export default function StockDetail() {
 
       <main className="max-w-5xl mx-auto px-5 py-6 space-y-4">
         {state.error && (
-          <div className="border border-red-300 bg-red-50 rounded-xl p-4 flex gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="text-[11.5px] text-red-700">{state.error}</div>
+          <div className="border border-down/40 bg-down-soft rounded-xl p-4 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-down-ink flex-shrink-0 mt-0.5" />
+            <div className="text-[13.5px] text-down-ink">{state.error}</div>
           </div>
         )}
 
@@ -640,7 +637,7 @@ export default function StockDetail() {
             <StockMark symbol={symbol} size={40} />
             <div className="relative min-w-0 max-w-full">
               <select value={symbol} onChange={(e) => setSymbol(e.target.value)}
-                className="appearance-none bg-white border border-gray-300 rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none max-w-full">
+                className="appearance-none bg-page border border-line-strong rounded-lg pl-3 pr-9 py-2.5 text-[14px] font-extrabold outline-none max-w-full">
                 {["equity", "etf", "fund"].map((k) => {
                   const group = universe.filter((u) => u.kind === k);
                   if (!group.length) return null;
@@ -658,22 +655,22 @@ export default function StockDetail() {
                   );
                 })}
               </select>
-              <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <ChevronDown className="w-4 h-4 text-faint absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
             {model?.last && (
               <div className="pb-1">
                 <span className="text-[20px] font-extrabold tabular-nums">{tzs(model.last.close)}</span>
-                <span className="text-[11px] text-gray-500 ml-2">
+                <span className="text-[13.5px] text-muted ml-2">
                   {prettyDate(model.last.date)}
                 </span>
               </div>
             )}
           </div>
-          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="flex gap-1 p-1 bg-surface-2 rounded-lg">
             {RANGES.map((r) => (
               <button key={r.k} onClick={() => setRange(r.k)}
-                className={`text-[11px] font-bold py-1.5 px-2.5 rounded-md ${
-                  range === r.k ? "bg-white shadow-sm text-neutral-950" : "text-gray-500"}`}>
+                className={`text-[12.5px] font-bold py-1.5 px-2.5 rounded-md ${
+                  range === r.k ? "bg-page shadow-sm text-ink" : "text-muted"}`}>
                 {r.l}
               </button>
             ))}
@@ -690,11 +687,11 @@ export default function StockDetail() {
           is not there.
         */}
         {!model && !state.loading && !state.error && (
-          <div className="border border-gray-200 rounded-2xl px-5 py-10 text-center">
-            <div className="text-[13px] font-extrabold text-neutral-950 mb-1.5">
+          <div className="border border-line rounded-2xl px-5 py-10 text-center">
+            <div className="text-[13px] font-extrabold text-ink mb-1.5">
               {liq?.name || symbol} is registered, but no prices have been stored yet
             </div>
-            <p className="text-[11.5px] text-gray-500 leading-relaxed max-w-md mx-auto">
+            <p className="text-[13.5px] text-muted leading-relaxed max-w-md mx-auto">
               {liq?.kind === "fund"
                 ? "Run the fund backfill to load its valuation history, then reload this page."
                 : "Nothing has been captured for this instrument yet. Paste a market report on /report, or wait for the next nightly capture."}
@@ -752,11 +749,11 @@ export default function StockDetail() {
                 ? `${model.actionsInRange.length} corporate action${model.actionsInRange.length > 1 ? "s" : ""} in range — toggle to see the unadjusted series`
                 : "No corporate actions recorded in this range"}
               right={
-                <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+                <div className="flex gap-1 p-1 bg-surface-2 rounded-lg">
                   {[{ v: "adj", l: "Adjusted" }, { v: "raw", l: "Raw" }].map((o) => (
                     <button key={o.v} onClick={() => setPriceMode(o.v)}
-                      className={`text-[10.5px] font-bold py-1 px-2.5 rounded ${
-                        priceMode === o.v ? "bg-white shadow-sm" : "text-gray-500"}`}>
+                      className={`text-[12px] font-bold py-1 px-2.5 rounded ${
+                        priceMode === o.v ? "bg-page shadow-sm" : "text-muted"}`}>
                       {o.l}
                     </button>
                   ))}
@@ -766,22 +763,22 @@ export default function StockDetail() {
               <div className="p-4" style={{ height: 260 }}>
                 <ResponsiveContainer>
                   <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 4 }}>
-                    <CartesianGrid stroke="#f3f4f6" vertical={false} />
+                    <CartesianGrid stroke="var(--sv-chart-grid)" vertical={false} />
                     <XAxis dataKey="date" tickFormatter={(d) => d.slice(0, 7)} minTickGap={60}
-                      tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
-                      axisLine={{ stroke: "#e5e7eb" }} tickLine={false} />
+                      tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
+                      axisLine={{ stroke: "var(--sv-line)" }} tickLine={false} />
                     <YAxis tickFormatter={compact} width={52}
-                      tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: 600 }}
+                      tick={{ fontSize: 11.5, fill: "var(--sv-chart-axis)", fontWeight: 600 }}
                       axisLine={false} tickLine={false} />
                     <Tooltip
-                      contentStyle={{ borderRadius: 12, border: "1px solid #e5e7eb",
+                      contentStyle={{ borderRadius: 12, border: "1px solid var(--sv-line)", background: "var(--sv-page)", color: "var(--sv-ink)",
                                       fontSize: 11, fontWeight: 700 }}
                       labelFormatter={prettyDate}
                       formatter={(v) => [tzs(v), priceMode === "adj" ? "Adjusted" : "Raw"]} />
                     {model.actionsInRange.map((a) => (
                       <ReferenceLine key={a.ex_date + a.kind} x={a.ex_date}
-                        stroke="#ba7517" strokeDasharray="3 3"
-                        label={{ value: a.kind, position: "top", fontSize: 9, fill: "#854f0b" }} />
+                        stroke="var(--sv-warn)" strokeDasharray="3 3"
+                        label={{ value: a.kind, position: "top", fontSize: 11, fill: "var(--sv-warn-ink)" }} />
                     ))}
                     <Line type="monotone" dataKey="v" stroke="#22c55e" strokeWidth={2}
                       dot={false} isAnimationActive={false} />
@@ -802,9 +799,9 @@ export default function StockDetail() {
                 hint="A unit trust has no market price — you transact with the manager at these two prices.">
                 <div className="p-4">
                   {model.lastFund && (
-                    <div className="flex items-stretch gap-0 border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="flex-1 p-3.5 bg-gray-50">
-                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                    <div className="flex items-stretch gap-0 border border-line rounded-xl overflow-hidden">
+                      <div className="flex-1 p-3.5 bg-surface">
+                        <div className="text-[12.5px] font-bold text-faint">
                           You buy at
                         </div>
                         <div className="text-[19px] font-extrabold tabular-nums mt-1">
@@ -812,8 +809,8 @@ export default function StockDetail() {
                             { minimumFractionDigits: 4 })}
                         </div>
                       </div>
-                      <div className="flex-1 p-3.5 bg-gray-50 border-x border-gray-200">
-                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                      <div className="flex-1 p-3.5 bg-surface border-x border-line">
+                        <div className="text-[12.5px] font-bold text-faint">
                           You sell at
                         </div>
                         <div className="text-[19px] font-extrabold tabular-nums mt-1">
@@ -822,19 +819,19 @@ export default function StockDetail() {
                         </div>
                       </div>
                       <div className={`flex-1 p-3.5 ${
-                        model.spread >= 1.5 ? "bg-red-50" : model.spread > 0 ? "bg-amber-50" : "bg-green-50"}`}>
-                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-400">
+                        model.spread >= 1.5 ? "bg-down-soft" : model.spread > 0 ? "bg-warn-soft" : "bg-accent-soft"}`}>
+                        <div className="text-[12.5px] font-bold text-faint">
                           Immediate cost
                         </div>
                         <div className={`text-[19px] font-extrabold tabular-nums mt-1 ${
-                          model.spread >= 1.5 ? "text-red-600"
-                            : model.spread > 0 ? "text-amber-600" : "text-green-600"}`}>
+                          model.spread >= 1.5 ? "text-down-ink"
+                            : model.spread > 0 ? "text-warn-ink" : "text-accent-ink"}`}>
                           {model.spread === 0 ? "none" : `−${model.spread.toFixed(2)}%`}
                         </div>
                       </div>
                     </div>
                   )}
-                  <p className="text-[10.5px] text-gray-500 leading-relaxed mt-3">
+                  <p className="text-[13px] text-muted leading-relaxed mt-3">
                     {model.spread > 0
                       ? `Put in 1,000,000 and sell the same day and you would get back about ` +
                         `TZS ${nf.format(Math.round(1000000 * (1 - model.spread / 100)))}. ` +
@@ -853,22 +850,22 @@ export default function StockDetail() {
             <Panel title="Sources disagreed"
               hint="A close outside the exchange's range for that day is a mis-dated row or an unrecorded action.">
               {model.recon.length === 0 ? (
-                <div className="px-4 py-6 text-center text-[11.5px] font-bold text-green-600">
+                <div className="px-4 py-6 text-center text-[13.5px] font-bold text-accent-ink">
                   All overlapping days agree
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                <div className="divide-y divide-line max-h-72 overflow-y-auto">
                   {model.recon.slice(0, 40).map((r, i) => (
-                    <div key={i} className="px-4 py-2.5 flex items-center gap-3 flex-wrap text-[11.5px]">
-                      <span className="text-gray-500 w-20 tabular-nums">{shortDate(r.date)}</span>
+                    <div key={i} className="px-4 py-2.5 flex items-center gap-3 flex-wrap text-[13.5px]">
+                      <span className="text-muted w-20 tabular-nums">{shortDate(r.date)}</span>
                       {r.vals.map((v) => (
                         <span key={v.source} className="tabular-nums">
-                          <span className="text-gray-400">{SOURCE_META[v.source]?.label ?? v.source}</span>{" "}
+                          <span className="text-faint">{SOURCE_META[v.source]?.label ?? v.source}</span>{" "}
                           <strong>{typeof v.close === "number" ? tzs(v.close) : v.close}</strong>
                         </span>
                       ))}
-                      <span className={`ml-auto text-[10px] font-bold uppercase tracking-wide ${
-                        r.kind === "range" ? "text-amber-600" : "text-gray-400"}`}>
+                      <span className={`ml-auto text-[12px] font-bold ${
+                        r.kind === "range" ? "text-warn-ink" : "text-faint"}`}>
                         {r.kind === "range" ? "out of range" : "close differs"}
                       </span>
                     </div>
@@ -877,8 +874,8 @@ export default function StockDetail() {
               )}
             </Panel>
 
-            <div className="flex gap-2.5 text-[10.5px] text-gray-500 leading-relaxed border border-gray-200 rounded-xl p-3.5">
-              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+            <div className="flex gap-2.5 text-[13px] text-muted leading-relaxed border border-line rounded-xl p-3.5">
+              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-faint" />
               <p>
                 Each day takes its close from the best available source and its volume from the
                 best source that reports it, so a DSE report can supply volume for a day whose

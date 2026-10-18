@@ -1,0 +1,95 @@
+/* Sokoview design tokens: the single source for colour, radius and type across
+   every investor page. Light is the default; html[data-theme="dark"] switches.
+   The theme attribute is set before first paint by the inline script in each
+   page's <head> (see src/theme/theme.js for the same logic in React). */
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --sv-page: #ffffff;
+  --sv-surface: #f9fafb;
+  --sv-surface-2: #f3f4f6;
+  --sv-line: #e5e7eb;
+  --sv-line-strong: #d1d5db;
+
+  /* text */
+  --sv-ink: #0a0a0a;
+  --sv-body: #4b5563;
+  --sv-muted: #6b7280;
+  --sv-faint: #9ca3af;
+
+  /* primary button and dark chips: ink in light, near-white in dark */
+  --sv-inverse: #0a0a0a;
+  --sv-on-inverse: #ffffff;
+
+  /* brand green */
+  --sv-accent: #22c55e;
+  --sv-accent-strong: #16a34a;
+  --sv-accent-ink: #15803d;
+  --sv-accent-soft: rgba(34, 197, 94, 0.1);
+  --sv-on-accent: #052e14;
+
+  /* falls, warnings */
+  --sv-down: #ef4444;
+  --sv-down-ink: #b91c1c;
+  --sv-down-soft: #fee2e2;
+  --sv-warn: #f59e0b;
+  --sv-warn-ink: #b45309;
+  --sv-warn-soft: #fef3c7;
+
+  /* charts */
+  --sv-chart-grid: #f3f4f6;
+  --sv-chart-axis: #9ca3af;
+  --sv-chart-ref: #d1d5db;
+  --sv-series-b: #0a0a0a;
+
+  /* texture, depth */
+  --sv-dot: rgba(0, 0, 0, 0.05);
+  --sv-shadow: 0 1px 2px rgba(10, 10, 10, 0.06), 0 12px 32px rgba(10, 10, 10, 0.12);
+  --sv-glass: rgba(255, 255, 255, 0.92);
+
+  /* shape */
+  --sv-radius-sm: 8px;
+  --sv-radius: 10px;
+  --sv-radius-lg: 16px;
+
+  --sv-font: 'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --sv-page: #0c0f0d;
+  --sv-surface: #141916;
+  --sv-surface-2: #1c231f;
+  --sv-line: #253029;
+  --sv-line-strong: #34423a;
+  --sv-ink: #f5f7f5;
+  --sv-body: #c7cdc9;
+  --sv-muted: #9aa39d;
+  --sv-faint: #6f7a73;
+  --sv-inverse: #f5f7f5;
+  --sv-on-inverse: #0c0f0d;
+  --sv-accent: #22c55e;
+  --sv-accent-strong: #4ade80;
+  --sv-accent-ink: #4ade80;
+  --sv-accent-soft: rgba(34, 197, 94, 0.14);
+  --sv-on-accent: #052e14;
+  --sv-down: #f87171;
+  --sv-down-ink: #f87171;
+  --sv-down-soft: rgba(239, 68, 68, 0.16);
+  --sv-warn: #f59e0b;
+  --sv-warn-ink: #fbbf24;
+  --sv-warn-soft: rgba(245, 158, 11, 0.16);
+  --sv-chart-grid: #1f2823;
+  --sv-chart-axis: #7d877f;
+  --sv-chart-ref: #34423a;
+  --sv-series-b: #f5f7f5;
+  --sv-dot: rgba(255, 255, 255, 0.05);
+  --sv-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
+  --sv-glass: rgba(12, 15, 13, 0.9);
+}
+
+html[data-theme] body { background: var(--sv-page); color: var(--sv-body); }
+html[data-theme] body { font-family: var(--sv-font); }
+html[data-theme] :where(button, input, select, textarea) { font-family: inherit; }

@@ -13,6 +13,18 @@
 Every investor page shares one navigation bar (`src/nav/SiteNav.jsx`) with a stock search; on phones the tabs move to a bottom bar.
 The home page reads `market_snapshot()` and `growth_since_jan_2025()` from Supabase, plus the `dividend_calendar` view.
 
+## Design language
+
+One set of tokens in `src/theme/tokens.css` drives every investor page, in light and dark:
+
+- **Colour**: `--sv-page`, `--sv-surface`, `--sv-ink`, `--sv-muted`, `--sv-line`, brand green `--sv-accent`, falls `--sv-down`, action dates `--sv-warn`. Tailwind pages use the same values as `bg-page`, `text-ink`, `border-line`, `bg-accent`… (mapped in `src/index.css`). Charts use `var(--sv-chart-grid)` etc. directly, so they switch with the theme.
+- **Type**: Sora only. Pages open with a small green title and a sentence headline; labels are sentence case; nothing smaller than 11px.
+- **Components**: black primary buttons (white in dark), green for the one main call to action, grey segmented controls, 16px-radius cards.
+- **Theme**: the moon/sun button in the nav. The choice is saved per browser (`sv.theme`), follows the OS until someone picks, and is applied in each page's `<head>` before first paint.
+
+Don't hard-code greys or white in new UI; reach for a token.
+
+
 # Sokoview Replay
 
 Replays DSE price history to compare investment approaches: a one-time investment
